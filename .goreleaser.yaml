@@ -1,0 +1,137 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+project_name: somafm
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: somafm
+    main: ./cmd/somafm
+    binary: somafm
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/glebovdev/somafm-cli/internal/config.AppVersion={{.Version}}
+    ignore:
+      - goos: windows
+        goarch: arm64
+      # Linux requires CGO for audio (oto/v3)
+      - goos: linux
+        goarch: amd64
+      - goos: linux
+        goarch: arm64
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  github:
+    owner: glebovdev
+    name: somafm-cli
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+  header: |
+    ## SomaFM CLI v{{.Version}}
+
+    A terminal-based music player for SomaFM radio stations.
+  footer: |
+    ---
+    {{- if .PreviousTag }}
+
+    **Full Changelog**: https://github.com/glebovdev/somafm-cli/compare/{{ .PreviousTag }}...{{ .Tag }}
+    {{- end }}
+
+    ## Installation
+
+    ### macOS
+    ```bash
+    brew install glebovdev/tap/somafm
+    ```
+
+    ### Windows
+    ```powershell
+    scoop bucket add glebovdev https://github.com/glebovdev/scoop-bucket
+    scoop install somafm
+    ```
+
+    ### Linux
+    ```bash
+    go install github.com/glebovdev/somafm-cli/cmd/somafm@latest
+    ```
+    Pre-built binaries require CGO. Use `go install` which builds with your system's audio libraries.
+
+# Homebrew cask configuration (replaces deprecated brews)
+scoops:
+  - name: somafm
+    repository:
+      owner: glebovdev
+      name: scoop-bucket
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/glebovdev/somafm-cli"
+    description: "Terminal-based music player for SomaFM radio stations"
+    license: MIT
+
+homebrew_casks:
+  - name: somafm
+    repository:
+      owner: glebovdev
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    url:
+      verified: github.com/glebovdev/somafm-cli
+    homepage: "https://github.com/glebovdev/somafm-cli"
+    description: "Terminal-based music player for SomaFM radio stations"
+    license: "MIT"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    binaries:
+      - somafm
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/somafm"]
+          end
