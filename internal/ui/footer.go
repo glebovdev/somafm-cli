@@ -123,7 +123,7 @@ func (s *StatusRenderer) renderPlaying() string {
 }
 
 func (s *StatusRenderer) renderPaused() string {
-	parts := []string{"⏸︎ PAUSED"}
+	parts := []string{PauseIcon + " PAUSED"}
 
 	if s.isMuted {
 		parts = append(parts, "[red]MUTED[-]")

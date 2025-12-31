@@ -93,7 +93,7 @@ func (ui *UI) setStationRow(table *tview.Table, row int, stationIndex int) {
 	playIcon := " "
 	if stationIndex == ui.playingIndex {
 		if ui.player.IsPaused() {
-			playIcon = "⏸"
+			playIcon = PauseIcon
 		} else {
 			playIcon = "➤"
 		}
@@ -270,7 +270,7 @@ func (ui *UI) updateStationListPlayingIndicator() {
 	playCell := ui.stationList.GetCell(row, 1)
 	if playCell != nil {
 		if ui.player.IsPaused() {
-			playCell.SetText("⏸")
+			playCell.SetText(PauseIcon)
 		} else {
 			playCell.SetText("➤")
 		}
