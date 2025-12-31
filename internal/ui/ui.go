@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,14 @@ const (
 	PlayerPanelHeight  = 12
 	FooterBreakpoint   = 130 // Width threshold for responsive footer
 )
+
+// PauseIcon uses platform-specific character (Windows renders ⏸ as emoji)
+var PauseIcon = func() string {
+	if runtime.GOOS == "windows" {
+		return "❚❚"
+	}
+	return "⏸"
+}()
 
 type UI struct {
 	app               *tview.Application
