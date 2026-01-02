@@ -6,12 +6,14 @@ Set Height 870
 Set FontSize 13
 Set Padding 0
 Set Theme "Catppuccin Mocha"
-Set TypingSpeed 100ms
+Set TypingSpeed 150ms
 
 # Start the app
+Sleep 350ms
 Type "somafm"
+Sleep 350ms
 Enter
-Sleep 3s
+Sleep 2.5s
 
 # Navigate and select station
 Up
@@ -51,4 +53,3 @@ Sleep 1s
 
 # Quit
 Type "q"
-Sleep 500ms
