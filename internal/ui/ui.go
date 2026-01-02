@@ -19,14 +19,16 @@ import (
 )
 
 const (
-	VolumeStep         = 5
-	HeaderHeight       = 3
-	FooterHeightWide   = 3 // Wide: 1 row with padding (top + text + bottom)
-	FooterHeightNarrow = 6 // Narrow: 2 rows × 3 lines each
-	CoverWidth         = 26
-	CoverHeight        = 12
-	PlayerPanelHeight  = 12
-	FooterBreakpoint   = 130 // Width threshold for responsive footer
+	VolumeStep            = 5
+	HeaderHeight          = 3
+	FooterHeightWide      = 3 // Wide: 1 row with padding (top + text + bottom)
+	FooterHeightNarrow    = 6 // Narrow: 2 rows × 3 lines each
+	CoverWidth            = 26
+	CoverHeight           = 12
+	PlayerPanelHeight     = 12
+	FooterBreakpoint      = 130 // Width threshold for responsive footer
+	MinLoadingDisplayTime = 1200 * time.Millisecond
+	MinStatusDisplayTime  = 300 * time.Millisecond
 )
 
 // PauseIcon uses platform-specific character (Windows renders ⏸ as emoji)
@@ -45,15 +47,15 @@ type UI struct {
 	stationList       *tview.Table
 	helpPanel         *tview.Box
 	contentLayout     *tview.Flex
-	playerPanel      *tview.Flex
-	currentTrackView *tview.TextView
-	logoPanel        *tview.Image
+	playerPanel       *tview.Flex
+	currentTrackView  *tview.TextView
+	logoPanel         *tview.Image
 	volumeView        *tview.Flex
 	mainLayout        *tview.Flex
 	loadingScreen     *tview.Flex
+	loadingText       *tview.TextView
 	progressBar       *tview.TextView
-	loadingText *tview.TextView
-	pages       *tview.Pages
+	pages             *tview.Pages
 	stopUpdates       chan struct{}
 	playingIndex      int
 	playingStationID  string
@@ -196,67 +198,117 @@ func (ui *UI) Run() error {
 }
 
 func (ui *UI) setupLoadingScreen() {
-	ui.progressBar = tview.NewTextView().
-		SetTextAlign(tview.AlignCenter).
-		SetDynamicColors(true).
-		SetText("Loading: 0%")
-
-	ui.progressBar.SetTextColor(ui.colors.foreground).
-		SetBackgroundColor(ui.colors.background)
-
 	ui.loadingText = tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
-		SetText("Initializing...")
+		SetText("Connecting to SomaFM... (1/3)")
 	ui.loadingText.SetTextColor(ui.colors.foreground).
 		SetBackgroundColor(ui.colors.background)
+
+	ui.progressBar = tview.NewTextView().
+		SetTextAlign(tview.AlignCenter).
+		SetText(ui.renderProgressBar(0))
+	ui.progressBar.SetTextColor(ui.colors.highlight).
+		SetBackgroundColor(ui.colors.background)
+
+	content := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(ui.loadingText, 1, 0, false).
+		AddItem(nil, 1, 0, false).
+		AddItem(ui.progressBar, 1, 0, false)
+	content.SetBackgroundColor(ui.colors.background)
 
 	ui.loadingScreen = tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(nil, 0, 1, false).
-		AddItem(tview.NewFlex().
-			AddItem(nil, 0, 1, false).
-			AddItem(ui.loadingText, 0, 1, false).
-			AddItem(nil, 0, 1, false), 3, 1, false).
-		AddItem(ui.progressBar, 1, 1, false).
+		AddItem(content, 3, 0, false).
 		AddItem(nil, 0, 1, false)
 
 	ui.loadingScreen.SetBackgroundColor(ui.colors.background)
 }
 
-func (ui *UI) fetchStationsAndInitUI() error {
-	// Show real progress stages instead of fake loading animation
-	ui.app.QueueUpdateDraw(func() {
-		ui.loadingText.SetText("Connecting to SomaFM...")
-		ui.progressBar.SetText("[::b]Loading: 10%[-:-:-]")
-	})
+func (ui *UI) renderProgressBar(percent int) string {
+	const width = 30
+	filled := (percent * width) / 100
+	empty := width - filled
+	return strings.Repeat("█", filled) + strings.Repeat("░", empty)
+}
 
-	stations, err := ui.stationService.GetStations()
+func (ui *UI) animateProgress(fromPercent, toPercent int, duration time.Duration) {
+	steps := toPercent - fromPercent
+	if steps <= 0 {
+		return
+	}
+	stepDuration := duration / time.Duration(steps)
+	lastBar := ui.renderProgressBar(fromPercent)
+
+	for p := fromPercent + 1; p <= toPercent; p++ {
+		time.Sleep(stepDuration)
+		if bar := ui.renderProgressBar(p); bar != lastBar {
+			ui.app.QueueUpdateDraw(func() {
+				ui.progressBar.SetText(bar)
+			})
+			lastBar = bar
+		}
+	}
+}
+
+func (ui *UI) fetchStationsAndInitUI() error {
+	const totalStages = 3
+	stagePercent := func(stage int) int { return (stage * 100) / totalStages }
+
+	startTime := time.Now()
+
+	animDone := make(chan struct{})
+	go func() {
+		ui.animateProgress(stagePercent(0), stagePercent(1), MinStatusDisplayTime)
+		close(animDone)
+	}()
+
+	_, err := ui.stationService.GetStations()
 	if err != nil {
 		return fmt.Errorf("failed to fetch stations: %w", err)
 	}
-	log.Debug().Msgf("Loaded %d stations", len(stations))
+	log.Debug().Msgf("Loaded %d stations in %v", ui.stationService.StationCount(), time.Since(startTime))
+
+	<-animDone
 
 	ui.app.QueueUpdateDraw(func() {
-		ui.loadingText.SetText("Loading configuration...")
-		ui.progressBar.SetText("[::b]Loading: 50%[-:-:-]")
+		ui.loadingText.SetText("Loading configuration... (2/3)")
 	})
 
 	ui.config.CleanupFavorites(ui.stationService.GetValidStationIDs())
 	ui.SaveConfig()
 
+	ui.animateProgress(stagePercent(1), stagePercent(2), MinStatusDisplayTime)
+
 	ui.app.QueueUpdateDraw(func() {
-		ui.loadingText.SetText("Building interface...")
-		ui.progressBar.SetText("[::b]Loading: 80%[-:-:-]")
+		ui.loadingText.SetText("Building interface... (3/3)")
 	})
 
 	ui.setupUI()
-
 	ui.stationService.StartPeriodicRefresh(30*time.Second, ui.onStationsRefreshed)
 
+	ui.animateProgress(stagePercent(2), stagePercent(3), MinStatusDisplayTime)
+
+	// Floor, not ceiling: wait only if real work finished early.
+	if elapsed := time.Since(startTime); elapsed < MinLoadingDisplayTime {
+		time.Sleep(MinLoadingDisplayTime - elapsed)
+	}
+	log.Debug().Msgf("Total loading time: %v", time.Since(startTime))
+
 	ui.app.QueueUpdateDraw(func() {
-		ui.progressBar.SetText("[::b]Loading: 100%[-:-:-]")
-		ui.pages.SwitchToPage("main")
+		ui.app.SetRoot(ui.pages, true).EnableMouse(true)
 		ui.app.SetFocus(ui.stationList)
+
+		if ui.startRandom {
+			ui.randomStation()
+		} else if ui.config.LastStation != "" {
+			if !ui.selectAndShowStationByID(ui.config.LastStation) {
+				ui.selectAndShowStation(0)
+			}
+		} else {
+			ui.selectAndShowStation(0)
+		}
 	})
 
 	return nil
@@ -297,28 +349,11 @@ func (ui *UI) setupUI() {
 		AddPage("main", ui.mainLayout, true, true)
 	ui.pages.SetBackgroundColor(ui.colors.background)
 
-	ui.app.SetRoot(ui.pages, true).
-		EnableMouse(true)
-
 	ui.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if ui.pages.HasPage("modal") {
 			return event
 		}
 		return ui.globalInputHandler(event)
-	})
-
-	ui.app.Draw()
-
-	ui.app.QueueUpdateDraw(func() {
-		if ui.startRandom {
-			ui.randomStation()
-		} else if ui.config.LastStation != "" {
-			if !ui.selectAndShowStationByID(ui.config.LastStation) {
-				ui.selectAndShowStation(0)
-			}
-		} else {
-			ui.selectAndShowStation(0)
-		}
 	})
 }
 
