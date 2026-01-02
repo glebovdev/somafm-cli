@@ -95,11 +95,12 @@ release:
     scoop install somafm
     ```
 
-    ### Linux
+    Or download from the [Releases page](https://github.com/glebovdev/somafm-cli/releases).
+
+    ### Go Install
     ```bash
     go install github.com/glebovdev/somafm-cli/cmd/somafm@latest
     ```
-    Pre-built binaries require CGO. Use `go install` which builds with your system's audio libraries.
 
 # Homebrew cask configuration (replaces deprecated brews)
 scoops:
