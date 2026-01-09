@@ -3,7 +3,7 @@ module github.com/glebovdev/somafm-cli
 go 1.24.0
 
 require (
-	github.com/gdamore/tcell/v2 v2.13.5
+	github.com/gdamore/tcell/v2 v2.13.6
 	github.com/go-resty/resty/v2 v2.17.1
 	github.com/gopxl/beep/v2 v2.1.1
 	github.com/rivo/tview v0.42.0
@@ -22,7 +22,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/term v0.38.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 )

@@ -14,8 +14,14 @@ build-all:
 test:
 	go test ./...
 
+lint:
+	golangci-lint run
+
+check: lint test build
+	goreleaser check
+
 clean:
 	go clean
 	rm -f $(BINARY_NAME) $(BINARY_NAME)-*
 
-.PHONY: build build-all test clean
+.PHONY: build build-all test lint check clean

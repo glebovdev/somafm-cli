@@ -179,22 +179,33 @@ func (ui *UI) Shutdown() {
 func (ui *UI) Run() error {
 	ui.setupLoadingScreen()
 	ui.app.SetRoot(ui.loadingScreen, true)
+	ui.configureScreen()
 
+	go ui.initAsync()
+
+	return ui.app.Run()
+}
+
+func (ui *UI) configureScreen() {
+	bgStyle := tcell.StyleDefault.Background(ui.colors.background)
 	ui.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
-		screen.SetStyle(tcell.StyleDefault.Background(ui.colors.background))
+		screen.SetStyle(bgStyle)
 		screen.Clear()
 		return false
 	})
 
-	go func() {
-		if err := ui.fetchStationsAndInitUI(); err != nil {
-			ui.app.QueueUpdateDraw(func() {
-				ui.handleInitialError(err)
-			})
-		}
-	}()
+	var titleSet sync.Once
+	ui.app.SetAfterDrawFunc(func(screen tcell.Screen) {
+		titleSet.Do(func() { screen.SetTitle(config.AppName) })
+	})
+}
 
-	return ui.app.Run()
+func (ui *UI) initAsync() {
+	if err := ui.fetchStationsAndInitUI(); err != nil {
+		ui.app.QueueUpdateDraw(func() {
+			ui.handleInitialError(err)
+		})
+	}
 }
 
 func (ui *UI) setupLoadingScreen() {
