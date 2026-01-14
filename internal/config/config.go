@@ -66,6 +66,7 @@ type Config struct {
 	Volume        int      `yaml:"volume"`
 	BufferSeconds int      `yaml:"buffer_seconds"`
 	LastStation   string   `yaml:"last_station"`
+	Autostart     bool     `yaml:"autostart"`
 	Favorites     []string `yaml:"favorites"`
 	Theme         Theme    `yaml:"theme"`
 }
@@ -95,8 +96,8 @@ func Load() (*Config, error) {
 		return DefaultConfig(), fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	cfg := DefaultConfig()
+	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return DefaultConfig(), fmt.Errorf("failed to parse config file: %w", err)
 	}
 
@@ -108,15 +109,8 @@ func Load() (*Config, error) {
 	if cfg.BufferSeconds > MaxBufferSecs {
 		cfg.BufferSeconds = MaxBufferSecs
 	}
-	if cfg.BufferSeconds == 0 && data != nil {
-		cfg.BufferSeconds = DefaultBufferSecs
-	}
 
-	if cfg.Theme.Background == "" {
-		cfg.Theme = DefaultConfig().Theme
-	}
-
-	return &cfg, nil
+	return cfg, nil
 }
 
 // Save writes the configuration to disk atomically using temp file + rename.
@@ -170,6 +164,7 @@ func DefaultConfig() *Config {
 		Volume:        DefaultVolume,
 		BufferSeconds: DefaultBufferSecs,
 		LastStation:   "",
+		Autostart:     false,
 		Favorites:     []string{},
 		Theme: Theme{
 			Background:                  "#1a1b25",
