@@ -77,6 +77,7 @@ Configuration is saved automatically to `~/.config/somafm/config.yml`.
 volume: 70                    # Volume level (0-100)
 buffer_seconds: 5             # Audio buffer size (0-60 seconds)
 last_station: groovesalad     # Last played station ID
+autostart: false              # Auto-play last station on launch (true/false)
 favorites:                    # List of favorite station IDs
   - groovesalad
   - dronezone

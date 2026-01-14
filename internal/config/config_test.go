@@ -16,6 +16,10 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.LastStation != "" {
 		t.Errorf("DefaultConfig().LastStation = %q, want empty string", cfg.LastStation)
 	}
+
+	if cfg.Autostart != false {
+		t.Errorf("DefaultConfig().Autostart = %v, want false", cfg.Autostart)
+	}
 }
 
 func TestConfigSaveAndLoad(t *testing.T) {
@@ -415,9 +419,9 @@ func TestBufferSecondsValidation(t *testing.T) {
 		expectedBuffer int
 	}{
 		{"valid buffer 5", 5, 5},
-		{"valid buffer 0", 0, DefaultBufferSecs},
+		{"valid buffer 0", 0, 0},
 		{"valid buffer 60", 60, 60},
-		{"negative buffer", -10, DefaultBufferSecs},
+		{"negative buffer", -10, MinBufferSecs},
 		{"buffer over 60", 100, MaxBufferSecs},
 		{"buffer way over max", 1000, MaxBufferSecs},
 	}
@@ -483,6 +487,34 @@ func TestFavoritesPersistence(t *testing.T) {
 		if fav != expected[i] {
 			t.Errorf("Favorites[%d] = %q, want %q", i, fav, expected[i])
 		}
+	}
+}
+
+func TestAutostartPersistence(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", originalHome)
+
+	testCfg := &Config{
+		Volume:      70,
+		LastStation: "groovesalad",
+		Autostart:   true,
+		Theme:       DefaultConfig().Theme,
+	}
+
+	err := testCfg.Save()
+	if err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	loadedCfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if loadedCfg.Autostart != true {
+		t.Errorf("Load().Autostart = %v, want true", loadedCfg.Autostart)
 	}
 }
 
