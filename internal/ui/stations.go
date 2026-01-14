@@ -177,20 +177,6 @@ func (ui *UI) selectAndShowStation(index int) {
 	log.Debug().Msgf("Showing station info (without playing): %s", ui.currentStation.Title)
 }
 
-func (ui *UI) selectAndShowStationByID(stationID string) bool {
-	index := ui.stationService.FindIndexByID(stationID)
-	if index < 0 {
-		log.Debug().Msgf("Last played station '%s' not found in station list", stationID)
-		return false
-	}
-
-	ui.selectAndShowStation(index)
-	if s := ui.stationService.GetStation(index); s != nil {
-		log.Debug().Msgf("Auto-selected last played station: %s", s.Title)
-	}
-	return true
-}
-
 func (ui *UI) toggleFavorite() {
 	row, _ := ui.stationList.GetSelection()
 	stationCount := ui.stationService.StationCount()

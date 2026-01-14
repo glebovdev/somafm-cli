@@ -313,12 +313,27 @@ func (ui *UI) fetchStationsAndInitUI() error {
 
 		if ui.startRandom {
 			ui.randomStation()
-		} else if ui.config.LastStation != "" {
-			if !ui.selectAndShowStationByID(ui.config.LastStation) {
-				ui.selectAndShowStation(0)
-			}
-		} else {
+			return
+		}
+
+		if ui.config.LastStation == "" {
 			ui.selectAndShowStation(0)
+			return
+		}
+
+		index := ui.stationService.FindIndexByID(ui.config.LastStation)
+		if index < 0 {
+			log.Debug().Msgf("Last station '%s' not found, showing first station", ui.config.LastStation)
+			ui.selectAndShowStation(0)
+			return
+		}
+
+		if ui.config.Autostart {
+			log.Debug().Msgf("Autostart enabled, playing last station: %s", ui.config.LastStation)
+			ui.stationList.Select(index+1, 0)
+			ui.onStationSelected(index)
+		} else {
+			ui.selectAndShowStation(index)
 		}
 	})
 
