@@ -28,6 +28,15 @@ A terminal-based music player for [SomaFM](https://somafm.com/) radio stations b
 brew install glebovdev/tap/somafm
 ```
 
+### Linux
+
+Download `somafm_*_linux_amd64.tar.gz` from the [Releases page](https://github.com/glebovdev/somafm-cli/releases) and extract:
+
+```bash
+tar -xzf somafm_*_linux_amd64.tar.gz
+sudo mv somafm /usr/local/bin/
+```
+
 ### Windows
 
 ```powershell
