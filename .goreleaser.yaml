@@ -19,7 +19,6 @@ builds:
       - linux
     goarch:
       - amd64
-      - arm64
     ldflags:
       - -s -w
       - -X github.com/glebovdev/somafm-cli/internal/config.AppVersion={{.Version}}
