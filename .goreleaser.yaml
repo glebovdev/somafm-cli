@@ -10,13 +10,26 @@ before:
     - go mod tidy
 
 builds:
-  - id: somafm
+  - id: linux
+    main: ./cmd/somafm
+    binary: somafm
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/glebovdev/somafm-cli/internal/config.AppVersion={{.Version}}
+
+  - id: darwin-windows
     main: ./cmd/somafm
     binary: somafm
     env:
       - CGO_ENABLED=0
     goos:
-      - linux
       - darwin
       - windows
     goarch:
@@ -27,11 +40,6 @@ builds:
       - -X github.com/glebovdev/somafm-cli/internal/config.AppVersion={{.Version}}
     ignore:
       - goos: windows
-        goarch: arm64
-      # Linux requires CGO for audio (oto/v3)
-      - goos: linux
-        goarch: amd64
-      - goos: linux
         goarch: arm64
 
 archives:
