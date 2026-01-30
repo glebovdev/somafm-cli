@@ -30,10 +30,12 @@ brew install glebovdev/tap/somafm
 
 ### Linux (manual)
 
-Download `somafm_*_linux_amd64.tar.gz` from the [Releases page](https://github.com/glebovdev/somafm-cli/releases) and extract:
+Download from the [Releases page](https://github.com/glebovdev/somafm-cli/releases):
+- `somafm_*_linux_amd64.tar.gz`
+- `somafm_*_linux_arm64.tar.gz`
 
 ```bash
-tar -xzf somafm_*_linux_amd64.tar.gz
+tar -xzf somafm_*_linux_*.tar.gz
 sudo mv somafm /usr/local/bin/
 ```
 
