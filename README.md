@@ -22,13 +22,13 @@ A terminal-based music player for [SomaFM](https://somafm.com/) radio stations b
 
 ## Installation
 
-### macOS
+### Homebrew (macOS/Linux)
 
 ```bash
 brew install glebovdev/tap/somafm
 ```
 
-### Linux
+### Linux (manual)
 
 Download `somafm_*_linux_amd64.tar.gz` from the [Releases page](https://github.com/glebovdev/somafm-cli/releases) and extract:
 

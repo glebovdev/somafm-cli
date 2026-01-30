@@ -22,8 +22,18 @@ jobs:
         with:
           go-version: "1.24"
 
-      - name: Install Linux audio dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Install Linux audio dependencies (amd64 + arm64 cross-compile)
+        run: |
+          # Add ARM64 architecture
+          sudo dpkg --add-architecture arm64
+
+          # Configure apt sources for ARM64 from ports.ubuntu.com
+          sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ jammy main universe" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ jammy-updates main universe" | sudo tee -a /etc/apt/sources.list
+
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev libasound2-dev:arm64
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
