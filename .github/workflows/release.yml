@@ -27,10 +27,13 @@ jobs:
           # Add ARM64 architecture
           sudo dpkg --add-architecture arm64
 
+          # Get Ubuntu codename dynamically (jammy, noble, etc.)
+          CODENAME=$(lsb_release -cs)
+
           # Configure apt sources for ARM64 from ports.ubuntu.com
           sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ jammy main universe" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ jammy-updates main universe" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ $CODENAME main universe" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ $CODENAME-updates main universe" | sudo tee -a /etc/apt/sources.list
 
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev libasound2-dev:arm64
