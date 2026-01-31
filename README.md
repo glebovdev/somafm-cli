@@ -34,17 +34,6 @@ brew install glebovdev/tap/somafm
 curl -sSL https://raw.githubusercontent.com/glebovdev/somafm-cli/master/install.sh | sh
 ```
 
-### Linux (manual)
-
-Download from the [Releases page](https://github.com/glebovdev/somafm-cli/releases):
-- `somafm_*_linux_amd64.tar.gz`
-- `somafm_*_linux_arm64.tar.gz`
-
-```bash
-tar -xzf somafm_*_linux_*.tar.gz
-sudo mv somafm /usr/local/bin/
-```
-
 ### Windows
 
 ```powershell
