@@ -28,6 +28,12 @@ A terminal-based music player for [SomaFM](https://somafm.com/) radio stations b
 brew install glebovdev/tap/somafm
 ```
 
+### Shell Script
+
+```bash
+curl -sSL https://raw.githubusercontent.com/glebovdev/somafm-cli/master/install.sh | sh
+```
+
 ### Linux (manual)
 
 Download from the [Releases page](https://github.com/glebovdev/somafm-cli/releases):
