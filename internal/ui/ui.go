@@ -381,6 +381,31 @@ func (ui *UI) setupUI() {
 		}
 		return ui.globalInputHandler(event)
 	})
+
+	ui.app.SetMouseCapture(func(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
+		if ui.pages.HasPage("modal") {
+			return event, action
+		}
+
+		// Handle scroll on volume bar only
+		if ui.volumeView != nil {
+			mx, my := event.Position()
+			vx, vy, vw, vh := ui.volumeView.GetRect()
+			onVolumeBar := mx >= vx && mx < vx+vw && my >= vy && my < vy+vh
+
+			if onVolumeBar {
+				switch action {
+				case tview.MouseScrollUp:
+					ui.adjustVolume(VolumeStep)
+					return nil, tview.MouseConsumed
+				case tview.MouseScrollDown:
+					ui.adjustVolume(-VolumeStep)
+					return nil, tview.MouseConsumed
+				}
+			}
+		}
+		return event, action
+	})
 }
 
 func (ui *UI) createHeader() tview.Primitive {

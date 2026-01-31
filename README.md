@@ -69,6 +69,7 @@ somafm --help       # Show help and config file path
 | `<` `>`            | Previous / Next station |
 | `r`                | Random station       |
 | `←` `→` or `+` `-` | Volume up / down     |
+| `Scroll`           | Volume (on volume bar) |
 | `m`                | Mute / Unmute        |
 | `f`                | Toggle favorite      |
 | `?`                | Show help            |
