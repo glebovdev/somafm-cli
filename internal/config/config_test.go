@@ -412,50 +412,6 @@ func TestGetColor(t *testing.T) {
 	}
 }
 
-func TestBufferSecondsValidation(t *testing.T) {
-	tests := []struct {
-		name           string
-		inputBuffer    int
-		expectedBuffer int
-	}{
-		{"valid buffer 5", 5, 5},
-		{"valid buffer 0", 0, 0},
-		{"valid buffer 60", 60, 60},
-		{"negative buffer", -10, MinBufferSecs},
-		{"buffer over 60", 100, MaxBufferSecs},
-		{"buffer way over max", 1000, MaxBufferSecs},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
-			originalHome := os.Getenv("HOME")
-			os.Setenv("HOME", tmpDir)
-			defer os.Setenv("HOME", originalHome)
-
-			testCfg := &Config{
-				Volume:        70,
-				BufferSeconds: tt.inputBuffer,
-				Theme:         DefaultConfig().Theme,
-			}
-
-			err := testCfg.Save()
-			if err != nil {
-				t.Fatalf("Save() error = %v", err)
-			}
-
-			loadedCfg, err := Load()
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-
-			if loadedCfg.BufferSeconds != tt.expectedBuffer {
-				t.Errorf("Load().BufferSeconds = %d, want %d", loadedCfg.BufferSeconds, tt.expectedBuffer)
-			}
-		})
-	}
-}
-
 func TestFavoritesPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
 	originalHome := os.Getenv("HOME")

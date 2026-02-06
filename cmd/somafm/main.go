@@ -80,12 +80,6 @@ func main() {
 		}
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to load config, using defaults")
-		cfg = config.DefaultConfig()
-	}
-
 	if *debugFlag {
 		if configPath, err := config.GetConfigPath(); err == nil {
 			log.Debug().Msgf("Config: %s", configPath)
@@ -97,7 +91,7 @@ func main() {
 
 	apiClient := api.NewSomaFMClient()
 	stationService := service.NewStationService(apiClient)
-	somaPlayer := player.NewPlayer(cfg.BufferSeconds)
+	somaPlayer := player.NewPlayer()
 	somaUi := ui.NewUI(somaPlayer, stationService, *randomFlag)
 
 	sigChan := make(chan os.Signal, 1)

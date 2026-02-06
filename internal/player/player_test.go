@@ -71,48 +71,18 @@ func TestPlayerStateString(t *testing.T) {
 }
 
 func TestNewPlayer(t *testing.T) {
-	tests := []struct {
-		bufferSeconds int
-		expectBuffer  bool
-	}{
-		{0, false},
-		{5, true},
-		{10, true},
+	p := NewPlayer()
+
+	if p == nil {
+		t.Fatal("NewPlayer returned nil")
 	}
 
-	for _, tt := range tests {
-		t.Run(fmt.Sprintf("buffer_%ds", tt.bufferSeconds), func(t *testing.T) {
-			p := NewPlayer(tt.bufferSeconds)
-
-			if p == nil {
-				t.Fatal("NewPlayer returned nil")
-			}
-
-			if tt.expectBuffer && len(p.buffer) == 0 {
-				t.Error("Expected buffer to be allocated")
-			}
-
-			if !tt.expectBuffer && len(p.buffer) != 0 {
-				t.Error("Expected no buffer")
-			}
-
-			if p.isPlaying {
-				t.Error("New player should not be playing")
-			}
-
-			if p.isPaused {
-				t.Error("New player should not be paused")
-			}
-		})
+	if p.isPlaying {
+		t.Error("New player should not be playing")
 	}
-}
 
-func TestNewPlayerBufferSize(t *testing.T) {
-	p := NewPlayer(5)
-	expectedSize := int(DefaultSampleRate) * 5
-
-	if len(p.buffer) != expectedSize {
-		t.Errorf("Buffer size = %d, want %d", len(p.buffer), expectedSize)
+	if p.isPaused {
+		t.Error("New player should not be paused")
 	}
 }
 
@@ -200,7 +170,7 @@ func TestParseStreamInfoFromURL(t *testing.T) {
 }
 
 func TestPlayerTrackManagement(t *testing.T) {
-	p := NewPlayer(0)
+	p := NewPlayer()
 
 	initial := p.GetCurrentTrack()
 	if initial != "Waiting for track info..." {
@@ -227,7 +197,7 @@ func TestPlayerTrackManagement(t *testing.T) {
 }
 
 func TestPlayerStateManagement(t *testing.T) {
-	p := NewPlayer(0)
+	p := NewPlayer()
 
 	if p.GetState() != StateIdle {
 		t.Errorf("Initial state = %v, want StateIdle", p.GetState())
@@ -245,7 +215,7 @@ func TestPlayerStateManagement(t *testing.T) {
 }
 
 func TestPlayerRetryInfo(t *testing.T) {
-	p := NewPlayer(0)
+	p := NewPlayer()
 
 	current, max := p.GetRetryInfo()
 	if current != 0 || max != 0 {
@@ -260,7 +230,7 @@ func TestPlayerRetryInfo(t *testing.T) {
 }
 
 func TestPlayerLastError(t *testing.T) {
-	p := NewPlayer(0)
+	p := NewPlayer()
 
 	if p.GetLastError() != "" {
 		t.Errorf("Initial error = %q, want empty", p.GetLastError())
@@ -273,7 +243,7 @@ func TestPlayerLastError(t *testing.T) {
 }
 
 func TestPlayerSessionDuration(t *testing.T) {
-	p := NewPlayer(0)
+	p := NewPlayer()
 
 	if p.GetSessionDuration() != 0 {
 		t.Error("Initial session duration should be 0")
@@ -288,34 +258,42 @@ func TestPlayerSessionDuration(t *testing.T) {
 	}
 }
 
-func TestPlayerBufferStats(t *testing.T) {
-	t.Run("no buffer", func(t *testing.T) {
-		p := NewPlayer(0)
+func TestPlayerDelayTracking(t *testing.T) {
+	p := NewPlayer()
 
-		if p.GetBufferFillPercent() != 0 {
-			t.Error("Buffer fill should be 0 with no buffer")
-		}
-		if p.GetBufferHealth() != 0 {
-			t.Error("Buffer health should be 0 with no sample channel")
-		}
-	})
+	if delay := p.GetPlaybackDelay(); delay != 0 {
+		t.Errorf("Initial delay = %v, want 0", delay)
+	}
 
-	t.Run("with buffer", func(t *testing.T) {
-		p := NewPlayer(1)
+	p.mu.Lock()
+	p.totalPausedMs = 3000
+	p.mu.Unlock()
 
-		p.bufferMu.Lock()
-		p.writeIdx = int64(len(p.buffer) / 2)
-		p.bufferMu.Unlock()
+	delay := p.GetPlaybackDelay()
+	if delay < 2*time.Second || delay > 4*time.Second {
+		t.Errorf("Delay = %v, expected ~3s", delay)
+	}
 
-		fill := p.GetBufferFillPercent()
-		if fill != 50 {
-			t.Errorf("Buffer fill = %d%%, want 50%%", fill)
-		}
-	})
+	p.mu.Lock()
+	p.pausedAt = time.Now().Add(-2 * time.Second)
+	p.mu.Unlock()
+
+	delay = p.GetPlaybackDelay()
+	if delay < 4*time.Second || delay > 6*time.Second {
+		t.Errorf("Delay with active pause = %v, expected ~5s", delay)
+	}
+}
+
+func TestPlayerBufferHealth(t *testing.T) {
+	p := NewPlayer()
+
+	if p.GetBufferHealth() != 0 {
+		t.Error("Buffer health should be 0 with no sample channel")
+	}
 }
 
 func TestPlayerStreamInfo(t *testing.T) {
-	p := NewPlayer(0)
+	p := NewPlayer()
 
 	info := p.GetStreamInfo()
 	if info.Format != "" || info.Bitrate != 0 {
@@ -336,7 +314,7 @@ func TestPlayerStreamInfo(t *testing.T) {
 }
 
 func TestPlayerIsPlayingIsPaused(t *testing.T) {
-	p := NewPlayer(0)
+	p := NewPlayer()
 
 	if p.IsPlaying() {
 		t.Error("New player should not be playing")
@@ -381,7 +359,7 @@ Title3=Stream 3
 	}))
 	defer server.Close()
 
-	p := NewPlayer(0)
+	p := NewPlayer()
 
 	ctx := context.Background()
 	urls, err := p.fetchAndParsePLS(ctx, server.URL)
@@ -412,7 +390,7 @@ func TestFetchAndParsePLSEmpty(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewPlayer(0)
+	p := NewPlayer()
 	ctx := context.Background()
 
 	_, err := p.fetchAndParsePLS(ctx, server.URL)
@@ -422,7 +400,7 @@ func TestFetchAndParsePLSEmpty(t *testing.T) {
 }
 
 func TestFetchAndParsePLSInvalidServer(t *testing.T) {
-	p := NewPlayer(0)
+	p := NewPlayer()
 	ctx := context.Background()
 
 	_, err := p.fetchAndParsePLS(ctx, "http://invalid.invalid.invalid/test.pls")
@@ -495,7 +473,7 @@ func (b *blockingReader) Read(p []byte) (int, error) {
 }
 
 func TestGetCurrentStation(t *testing.T) {
-	p := NewPlayer(0)
+	p := NewPlayer()
 
 	if p.GetCurrentStation() != nil {
 		t.Error("Initial station should be nil")

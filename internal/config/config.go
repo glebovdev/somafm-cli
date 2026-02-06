@@ -21,14 +21,11 @@ const (
 	AppDonateURL      = "https://somafm.com/donate/"
 	AppDonateShort    = "somafm.com/donate"
 
-	ConfigDir         = ".config/somafm"
-	ConfigFileName    = "config.yml"
-	DefaultVolume     = 70
-	MinVolume         = 0
-	MaxVolume         = 100
-	DefaultBufferSecs = 5
-	MinBufferSecs     = 0
-	MaxBufferSecs     = 60
+	ConfigDir      = ".config/somafm"
+	ConfigFileName = "config.yml"
+	DefaultVolume  = 70
+	MinVolume      = 0
+	MaxVolume      = 100
 )
 
 // ClampVolume ensures volume is within the valid range [0, 100].
@@ -63,12 +60,11 @@ type Theme struct {
 }
 
 type Config struct {
-	Volume        int      `yaml:"volume"`
-	BufferSeconds int      `yaml:"buffer_seconds"`
-	LastStation   string   `yaml:"last_station"`
-	Autostart     bool     `yaml:"autostart"`
-	Favorites     []string `yaml:"favorites"`
-	Theme         Theme    `yaml:"theme"`
+	Volume      int      `yaml:"volume"`
+	LastStation string   `yaml:"last_station"`
+	Autostart   bool     `yaml:"autostart"`
+	Favorites   []string `yaml:"favorites"`
+	Theme       Theme    `yaml:"theme"`
 }
 
 func GetConfigPath() (string, error) {
@@ -102,13 +98,6 @@ func Load() (*Config, error) {
 	}
 
 	cfg.Volume = ClampVolume(cfg.Volume)
-
-	if cfg.BufferSeconds < MinBufferSecs {
-		cfg.BufferSeconds = MinBufferSecs
-	}
-	if cfg.BufferSeconds > MaxBufferSecs {
-		cfg.BufferSeconds = MaxBufferSecs
-	}
 
 	return cfg, nil
 }
@@ -161,11 +150,10 @@ func (c *Config) Save() error {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Volume:        DefaultVolume,
-		BufferSeconds: DefaultBufferSecs,
-		LastStation:   "",
-		Autostart:     false,
-		Favorites:     []string{},
+		Volume:      DefaultVolume,
+		LastStation: "",
+		Autostart:   false,
+		Favorites:   []string{},
 		Theme: Theme{
 			Background:                  "#1a1b25",
 			Foreground:                  "#a3aacb",
