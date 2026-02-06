@@ -31,7 +31,8 @@ const (
 	VolumeCurveExponent = 0.5
 	MinVolumeDB         = -10.0
 	ReadTimeout         = 10 * time.Second
-	MaxErrorsToKeep     = 10 // Limit error accumulation during retries
+	MaxErrorsToKeep     = 10
+	MaxPlaybackDelay    = 5 * time.Second
 )
 
 type PlayerState int
@@ -116,7 +117,7 @@ func (cr *contextReader) Read(p []byte) (n int, err error) {
 }
 
 // Player handles audio streaming and playback for SomaFM radio stations.
-// It manages the audio pipeline including network streaming, decoding, buffering,
+// It manages the audio pipeline including network streaming, decoding,
 // and volume control.
 type Player struct {
 	format        beep.Format
@@ -128,17 +129,12 @@ type Player struct {
 	isPlaying     bool
 	speakerInit   bool
 	volumePercent int
-	httpClient    *http.Client // Reused for all stream connections
+	httpClient    *http.Client
 
-	buffer         [][2]float64
-	bufferSize     int
-	writeIdx       int64
-	readBackOffset int
-	bufferMu       sync.Mutex
 	sampleCh       chan [2]float64
 	wg             sync.WaitGroup
 	streamDone     chan struct{}
-	streamDoneOnce sync.Once // Prevents double-close panic on streamDone
+	streamDoneOnce sync.Once
 	streamErr      chan error
 
 	currentTrack string
@@ -155,6 +151,9 @@ type Player struct {
 	currentStation *station.Station
 	streamAlive    bool
 	streamAliveMu  sync.RWMutex
+
+	pausedAt      time.Time
+	totalPausedMs int64
 }
 
 // closeStreamDone safely closes the streamDone channel exactly once.
@@ -167,24 +166,14 @@ func (p *Player) closeStreamDone() {
 	})
 }
 
-// NewPlayer creates a new Player with the specified buffer size in seconds.
-func NewPlayer(bufferSeconds int) *Player {
-	var buffer [][2]float64
-	if bufferSeconds > 0 {
-		bufferLen := int(DefaultSampleRate) * bufferSeconds
-		buffer = make([][2]float64, bufferLen)
-		log.Debug().Msgf("Initialized circular buffer: %d seconds (%d samples, ~%.2f MB)",
-			bufferSeconds, bufferLen, float64(bufferLen*2*8)/1000000)
-	}
-
-	// Create a reusable HTTP client with appropriate settings for streaming
+func NewPlayer() *Player {
 	httpClient := &http.Client{
-		Timeout: 0, // No timeout for streaming connections
+		Timeout: 0,
 		Transport: &http.Transport{
 			DisableKeepAlives:  false,
 			MaxIdleConns:       10,
 			IdleConnTimeout:    90 * time.Second,
-			DisableCompression: true, // Audio streams are already compressed
+			DisableCompression: true,
 		},
 	}
 
@@ -199,8 +188,6 @@ func NewPlayer(bufferSeconds int) *Player {
 		isPlaying:     false,
 		volumePercent: -1,
 		httpClient:    httpClient,
-		buffer:        buffer,
-		bufferSize:    bufferSeconds,
 		currentTrack:  "",
 	}
 }
@@ -249,10 +236,25 @@ func (p *Player) Stop() {
 
 func (p *Player) TogglePause() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if p.ctrl == nil || !p.isPlaying {
+		p.mu.Unlock()
 		return
+	}
+
+	if p.isPaused && !p.pausedAt.IsZero() {
+		pauseDuration := time.Since(p.pausedAt)
+		p.totalPausedMs += pauseDuration.Milliseconds()
+		totalPaused := time.Duration(p.totalPausedMs) * time.Millisecond
+
+		if totalPaused > MaxPlaybackDelay {
+			p.pausedAt = time.Time{}
+			p.totalPausedMs = 0
+			p.mu.Unlock()
+			log.Debug().Msgf("Total paused %v (>%v), reconnecting", totalPaused, MaxPlaybackDelay)
+			go p.Reconnect()
+			return
+		}
 	}
 
 	speaker.Lock()
@@ -261,15 +263,50 @@ func (p *Player) TogglePause() {
 	speaker.Unlock()
 
 	if p.isPaused {
+		p.pausedAt = time.Now()
 		p.stateMu.Lock()
 		p.state = StatePaused
 		p.stateMu.Unlock()
 		log.Debug().Msg("Playback paused")
 	} else {
+		p.pausedAt = time.Time{}
 		p.stateMu.Lock()
 		p.state = StatePlaying
 		p.stateMu.Unlock()
 		log.Debug().Msg("Playback resumed")
+	}
+
+	p.mu.Unlock()
+}
+
+func (p *Player) GetPlaybackDelay() time.Duration {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	total := time.Duration(p.totalPausedMs) * time.Millisecond
+	if !p.pausedAt.IsZero() {
+		total += time.Since(p.pausedAt)
+	}
+	return total
+}
+
+func (p *Player) Reconnect() {
+	p.mu.Lock()
+	station := p.currentStation
+	p.mu.Unlock()
+
+	if station == nil {
+		return
+	}
+
+	p.setState(StateReconnecting)
+	p.Stop()
+
+	err := p.Play(station)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		log.Error().Err(err).Msg("Reconnect failed")
+		p.setState(StateError)
+		p.setLastError("Reconnect failed")
 	}
 }
 
@@ -382,23 +419,6 @@ func (p *Player) setStreamInfo(info StreamInfo) {
 	defer p.stateMu.Unlock()
 	p.streamInfo = info
 	log.Debug().Msgf("Stream info: %s %dk %dHz", info.Format, info.Bitrate, info.SampleRate)
-}
-
-func (p *Player) GetBufferFillPercent() int {
-	if len(p.buffer) == 0 {
-		return 0
-	}
-
-	p.bufferMu.Lock()
-	defer p.bufferMu.Unlock()
-
-	bufferLen := int64(len(p.buffer))
-	fillLevel := p.writeIdx
-	if fillLevel > bufferLen {
-		fillLevel = bufferLen
-	}
-
-	return int((fillLevel * 100) / bufferLen)
 }
 
 // GetBufferHealth returns the current buffer fill level as a percentage (0-100).
@@ -620,22 +640,12 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 	p.mu.Lock()
 	p.sampleCh = make(chan [2]float64, SampleChannelSize)
 	p.streamDone = make(chan struct{})
-	p.streamDoneOnce = sync.Once{} // Reset for new stream
+	p.streamDoneOnce = sync.Once{}
 	p.streamErr = make(chan error, 1)
+	p.pausedAt = time.Time{}
+	p.totalPausedMs = 0
 	p.mu.Unlock()
 
-	if len(p.buffer) > 0 {
-		p.bufferMu.Lock()
-		for i := range p.buffer {
-			p.buffer[i] = [2]float64{0, 0}
-		}
-		p.writeIdx = 0
-		p.readBackOffset = 0
-		p.bufferMu.Unlock()
-	}
-
-	// Use context-aware reader for timeout detection
-	// The goroutine in contextReader will exit when context is cancelled
 	timeoutBody := &contextReader{
 		reader:  resp.Body,
 		ctx:     ctx,
@@ -711,7 +721,8 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 	p.streamInfo.SampleRate = int(format.SampleRate)
 	p.stateMu.Unlock()
 
-	log.Debug().Msgf("Now playing: %s (buffer: %ds)", s.Title, p.bufferSize)
+	p.setLastError("")
+	log.Debug().Msgf("Now playing: %s", s.Title)
 
 	select {
 	case <-ctx.Done():
@@ -904,13 +915,6 @@ func (p *Player) decodeAndBuffer(ctx context.Context, streamer beep.StreamSeekCl
 				case <-p.streamDone:
 					return
 				case p.sampleCh <- sample:
-					if len(p.buffer) > 0 {
-						p.bufferMu.Lock()
-						idx := p.writeIdx % int64(len(p.buffer))
-						p.buffer[idx] = sample
-						p.writeIdx++
-						p.bufferMu.Unlock()
-					}
 				}
 			}
 		}
@@ -922,54 +926,19 @@ type bufferedStreamerWrapper struct {
 }
 
 func (b *bufferedStreamerWrapper) Stream(samples [][2]float64) (n int, ok bool) {
-	p := b.player
-	i := 0
-
-	if len(p.buffer) > 0 {
-		i = b.readFromBuffer(samples)
-		if i == len(samples) {
-			return i, true
-		}
-	}
-
-	return b.readFromChannel(samples, i)
+	return b.readFromChannel(samples)
 }
 
-func (b *bufferedStreamerWrapper) readFromBuffer(samples [][2]float64) int {
+func (b *bufferedStreamerWrapper) readFromChannel(samples [][2]float64) (n int, ok bool) {
 	p := b.player
-	i := 0
 
-	p.bufferMu.Lock()
-	defer p.bufferMu.Unlock()
-
-	for p.readBackOffset < 0 && i < len(samples) {
-		bufLen := int64(len(p.buffer))
-		idx := (p.writeIdx + int64(p.readBackOffset) + bufLen) % bufLen
-
-		if idx >= p.writeIdx {
-			break
-		}
-
-		samples[i] = p.buffer[idx]
-		p.readBackOffset++
-		i++
-	}
-
-	return i
-}
-
-func (b *bufferedStreamerWrapper) readFromChannel(samples [][2]float64, startIdx int) (n int, ok bool) {
-	p := b.player
-	i := startIdx
-
-	for i < len(samples) {
+	for i := 0; i < len(samples); i++ {
 		select {
 		case sample, more := <-p.sampleCh:
 			if !more {
 				return i, i > 0
 			}
 			samples[i] = sample
-			i++
 		case <-p.streamDone:
 			return i, i > 0
 		}
