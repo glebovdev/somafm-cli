@@ -376,14 +376,14 @@ func (ui *UI) setupUI() {
 	ui.pages.SetBackgroundColor(ui.colors.background)
 
 	ui.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if ui.pages.HasPage("modal") {
+		if ui.pages.HasPage("modal") || ui.pages.HasPage("error-modal") {
 			return event
 		}
 		return ui.globalInputHandler(event)
 	})
 
 	ui.app.SetMouseCapture(func(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
-		if ui.pages.HasPage("modal") {
+		if ui.pages.HasPage("modal") || ui.pages.HasPage("error-modal") {
 			return event, action
 		}
 
@@ -532,7 +532,7 @@ func (ui *UI) onStationSelected(index int) {
 			}
 			log.Error().Err(err).Msg("Failed to play station")
 			ui.app.QueueUpdateDraw(func() {
-				ui.showError(fmt.Sprintf("Failed to play station: %v", err))
+				ui.showError(err)
 			})
 		}
 	}()
@@ -722,6 +722,10 @@ func (ui *UI) startPlayingAnimation() {
 
 				ui.app.QueueUpdateDraw(func() {
 					ui.updateStationListPlayingIndicator()
+					if ui.pages.HasPage("error-modal") && ui.player.GetState() == player.StatePlaying {
+						ui.pages.RemovePage("error-modal")
+						ui.app.SetFocus(ui.stationList)
+					}
 				})
 			case <-trackUpdateTicker.C:
 				ui.app.QueueUpdateDraw(func() {

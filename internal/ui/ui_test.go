@@ -158,12 +158,12 @@ func TestExtractErrorReason(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractErrorReason(tt.err)
+			result := friendlyErrorMessage(tt.err.Error())
 			if result == "" {
-				t.Error("extractErrorReason returned empty string")
+				t.Error("friendlyErrorMessage returned empty string")
 			}
 			if !containsString(result, tt.contains) {
-				t.Errorf("extractErrorReason(%v) = %q, expected to contain %q",
+				t.Errorf("friendlyErrorMessage(%v) = %q, expected to contain %q",
 					tt.err, result, tt.contains)
 			}
 		})
@@ -172,7 +172,7 @@ func TestExtractErrorReason(t *testing.T) {
 
 func TestExtractErrorReasonLongError(t *testing.T) {
 	longErr := errors.New(string(make([]byte, 200)))
-	result := extractErrorReason(longErr)
+	result := friendlyErrorMessage(longErr.Error())
 
 	if len(result) > 110 {
 		t.Errorf("Long error not truncated properly, got length %d", len(result))
