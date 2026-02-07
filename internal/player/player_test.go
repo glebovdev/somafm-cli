@@ -110,31 +110,6 @@ func TestIsNonRetryableError(t *testing.T) {
 	}
 }
 
-func TestIsNetworkDownError(t *testing.T) {
-	tests := []struct {
-		err      error
-		expected bool
-	}{
-		{errors.New("no such host"), true},
-		{errors.New("network is unreachable"), true},
-		{errors.New("no route to host"), true},
-		{errors.New("network is down"), true},
-		{errors.New("DNS lookup failed"), true},
-		{errors.New("read timeout"), true},
-		{errors.New("connection refused"), false},
-		{errors.New("status 500"), false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.err.Error(), func(t *testing.T) {
-			result := isNetworkDownError(tt.err)
-			if result != tt.expected {
-				t.Errorf("isNetworkDownError(%q) = %v, want %v", tt.err, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestParseStreamInfoFromURL(t *testing.T) {
 	tests := []struct {
 		url             string

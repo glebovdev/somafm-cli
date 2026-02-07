@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,10 +11,7 @@ import (
 	"github.com/rivo/tview"
 )
 
-func extractErrorReason(err error) string {
-	errStr := err.Error()
-
-	// Common network errors
+func friendlyErrorMessage(errStr string) string {
 	if strings.Contains(errStr, "no such host") {
 		return "Unable to connect to server.\nPlease check your internet connection."
 	}
@@ -22,11 +21,11 @@ func extractErrorReason(err error) string {
 	if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline exceeded") {
 		return "Connection timed out.\nPlease check your internet connection."
 	}
-	if strings.Contains(errStr, "network is unreachable") {
+	if strings.Contains(errStr, "network is unreachable") || strings.Contains(errStr, "network read error") {
 		return "Network is unreachable.\nPlease check your internet connection."
 	}
 	if strings.Contains(errStr, "status 401") {
-		return "Stream access denied (401).\nTrying alternative servers..."
+		return "Stream access denied (401)."
 	}
 	if strings.Contains(errStr, "status 403") {
 		return "Stream access forbidden (403)."
@@ -44,26 +43,46 @@ func extractErrorReason(err error) string {
 	return errStr
 }
 
-func (ui *UI) showErrorModal(title, message string, onDismiss func()) {
+func (ui *UI) showError(err error) {
+	ui.showPlaybackErrorModal(friendlyErrorMessage(err.Error()))
+}
+
+func (ui *UI) showPlaybackErrorModal(message string) {
 	doDismiss := func() {
-		ui.pages.RemovePage("modal")
+		ui.pages.RemovePage("error-modal")
 		ui.app.SetFocus(ui.stationList)
-		if onDismiss != nil {
-			onDismiss()
+	}
+
+	doRetry := func() {
+		ui.pages.RemovePage("error-modal")
+		ui.app.SetFocus(ui.stationList)
+		if ui.currentStation != nil {
+			ui.startPlayingAnimation()
+			go func() {
+				err := ui.player.Play(ui.currentStation)
+				if err != nil {
+					if errors.Is(err, context.Canceled) {
+						return
+					}
+					ui.app.QueueUpdateDraw(func() {
+						ui.showError(err)
+					})
+				}
+			}()
 		}
 	}
 
 	messageView := tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
 		SetDynamicColors(true).
-		SetText(fmt.Sprintf("\n[::b]%s[::-]\n\n%s", title, message))
+		SetText(fmt.Sprintf("\n[::b]Playback Error[::-]\n\n%s", message))
 	messageView.SetTextColor(ui.colors.foreground)
 	messageView.SetBackgroundColor(ui.colors.modalBackground)
 
 	hintView := tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
 		SetDynamicColors(true).
-		SetText("[::d]Press Enter or Esc to continue[::-]")
+		SetText("[::d]Press [::b]R[::d] to retry  •  Press [::b]Esc[::d] to dismiss[::-]")
 	hintView.SetTextColor(tcell.ColorDarkGray)
 	hintView.SetBackgroundColor(ui.colors.modalBackground)
 
@@ -105,39 +124,20 @@ func (ui *UI) showErrorModal(title, message string, onDismiss func()) {
 
 	modal.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
-		case tcell.KeyEnter, tcell.KeyEscape:
+		case tcell.KeyEscape, tcell.KeyEnter:
 			doDismiss()
 			return nil
+		case tcell.KeyRune:
+			if event.Rune() == 'r' || event.Rune() == 'R' {
+				doRetry()
+				return nil
+			}
 		}
 		return event
 	})
 
-	ui.pages.AddPage("modal", modal, true, true)
+	ui.pages.AddPage("error-modal", modal, true, true)
 	ui.app.SetFocus(modal)
-}
-
-func (ui *UI) showError(message string) {
-	friendlyMsg := message
-	if strings.HasPrefix(message, "Failed to play station: ") {
-		errPart := strings.TrimPrefix(message, "Failed to play station: ")
-		if strings.Contains(errPart, "no such host") {
-			friendlyMsg = "Unable to connect to stream server.\nPlease check your internet connection."
-		} else if strings.Contains(errPart, "connection refused") {
-			friendlyMsg = "Connection refused by stream server."
-		} else if strings.Contains(errPart, "timeout") {
-			friendlyMsg = "Connection timed out."
-		} else if strings.Contains(errPart, "network read error") {
-			friendlyMsg = "Network connection lost.\nPlease check your internet connection."
-		} else {
-			if len(errPart) > 80 {
-				friendlyMsg = "Unable to play station.\nPlease try again later."
-			} else {
-				friendlyMsg = errPart
-			}
-		}
-	}
-
-	ui.showErrorModal("Playback Error", friendlyMsg, nil)
 }
 
 func (ui *UI) showHelpModal() {
@@ -390,7 +390,7 @@ func (ui *UI) showInitialErrorScreen(title, message string, onRetry, onQuit func
 }
 
 func (ui *UI) handleInitialError(err error) {
-	friendlyMsg := extractErrorReason(err)
+	friendlyMsg := friendlyErrorMessage(err.Error())
 
 	ui.showInitialErrorScreen(
 		"Unable to Load Stations",

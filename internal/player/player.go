@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -30,7 +31,7 @@ const (
 	RetryDelay          = time.Second * 2
 	VolumeCurveExponent = 0.5
 	MinVolumeDB         = -10.0
-	ReadTimeout         = 10 * time.Second
+	ReadTimeout         = 5 * time.Second
 	MaxErrorsToKeep     = 10
 	MaxPlaybackDelay    = 5 * time.Second
 )
@@ -73,9 +74,7 @@ type StreamInfo struct {
 	SampleRate int
 }
 
-// contextReader wraps a reader with context-aware timeout detection.
-// When a read blocks longer than the timeout, it returns an error
-// without leaking goroutines (relies on context cancellation for cleanup).
+// Relies on context cancellation to clean up the spawned read goroutine.
 type contextReader struct {
 	reader  io.Reader
 	ctx     context.Context
@@ -116,9 +115,7 @@ func (cr *contextReader) Read(p []byte) (n int, err error) {
 	}
 }
 
-// Player handles audio streaming and playback for SomaFM radio stations.
-// It manages the audio pipeline including network streaming, decoding,
-// and volume control.
+// Player manages audio streaming and playback for SomaFM radio stations.
 type Player struct {
 	format        beep.Format
 	volume        *effects.Volume
@@ -156,8 +153,7 @@ type Player struct {
 	totalPausedMs int64
 }
 
-// closeStreamDone safely closes the streamDone channel exactly once.
-// This prevents panics from double-close when multiple goroutines try to signal completion.
+// Prevents panics from double-close when multiple goroutines signal completion.
 func (p *Player) closeStreamDone() {
 	p.streamDoneOnce.Do(func() {
 		if p.streamDone != nil {
@@ -168,12 +164,17 @@ func (p *Player) closeStreamDone() {
 
 func NewPlayer() *Player {
 	httpClient := &http.Client{
-		Timeout: 0,
+		Timeout: 0, // No overall timeout — streams are long-lived
 		Transport: &http.Transport{
-			DisableKeepAlives:  false,
-			MaxIdleConns:       10,
-			IdleConnTimeout:    90 * time.Second,
-			DisableCompression: true,
+			DialContext: (&net.Dialer{
+				Timeout: 10 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 15 * time.Second,
+			DisableKeepAlives:     false,
+			MaxIdleConns:          10,
+			IdleConnTimeout:       90 * time.Second,
+			DisableCompression:    true,
 		},
 	}
 
@@ -211,6 +212,10 @@ func (p *Player) initSpeaker(sampleRate beep.SampleRate) error {
 func (p *Player) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	if p.cancelFunc == nil && !p.isPlaying {
+		return
+	}
 
 	if p.cancelFunc != nil {
 		p.cancelFunc()
@@ -483,10 +488,10 @@ func (p *Player) setLastError(err string) {
 }
 
 func (p *Player) Play(s *station.Station) error {
-	return p.PlayWithRetry(s, MaxRetries)
+	return p.playWithRetry(s, MaxRetries)
 }
 
-func (p *Player) PlayWithRetry(s *station.Station, maxRetries int) error {
+func (p *Player) playWithRetry(s *station.Station, maxRetries int) error {
 	playlistURLs := s.GetAllPlaylistURLs()
 	if len(playlistURLs) == 0 {
 		p.setState(StateError)
@@ -496,9 +501,9 @@ func (p *Player) PlayWithRetry(s *station.Station, maxRetries int) error {
 
 	p.setState(StateBuffering)
 	p.setRetryInfo(0, maxRetries)
+	p.setCurrentTrack("")
 
 	allErrors := make([]string, 0, MaxErrorsToKeep)
-	totalAttempts := 0
 
 	addError := func(msg string) {
 		if len(allErrors) < MaxErrorsToKeep {
@@ -506,6 +511,10 @@ func (p *Player) PlayWithRetry(s *station.Station, maxRetries int) error {
 		}
 	}
 
+	var reconnectStreamURLs []string
+	var reconnectStreamInfo StreamInfo
+
+playlists:
 	for playlistIdx, playlistURL := range playlistURLs {
 		log.Debug().Msgf("Trying playlist %d/%d: %s", playlistIdx+1, len(playlistURLs), playlistURL)
 
@@ -524,12 +533,12 @@ func (p *Player) PlayWithRetry(s *station.Station, maxRetries int) error {
 		log.Debug().Msgf("Found %d stream URLs in playlist", len(streamURLs))
 
 		for urlIdx, streamURL := range streamURLs {
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				totalAttempts++
-
-				if attempt > 1 {
+			for attempt := 0; attempt <= maxRetries; attempt++ {
+				if attempt > 0 {
 					p.setState(StateReconnecting)
 					p.setRetryInfo(attempt, maxRetries)
+					log.Warn().Msgf("Stream failed, retrying in %v... (%d/%d)", RetryDelay, attempt, maxRetries)
+					time.Sleep(RetryDelay)
 				}
 
 				log.Debug().Msgf("Trying stream %d/%d (attempt %d/%d): %s",
@@ -555,33 +564,87 @@ func (p *Player) PlayWithRetry(s *station.Station, maxRetries int) error {
 					return context.Canceled
 				}
 
+				// StatePlaying means the stream connected and played before dropping
+				if p.GetState() == StatePlaying {
+					log.Info().Msg("Stream was playing, entering reconnect mode")
+					reconnectStreamURLs = streamURLs
+					reconnectStreamInfo = streamInfo
+					break playlists
+				}
+
 				if isNonRetryableError(err) {
 					log.Warn().Err(err).Msgf("Non-retryable error for %s, moving to next URL", streamURL)
 					addError(fmt.Sprintf("%s: %v", streamURL, err))
 					break
 				}
 
-				if isNetworkDownError(err) {
-					log.Warn().Err(err).Msg("Network appears to be down, stopping retries")
-					p.setState(StateError)
-					p.setLastError("Network connection lost")
-					return fmt.Errorf("network connection lost: %w", err)
-				}
-
 				addError(fmt.Sprintf("%s (attempt %d): %v", streamURL, attempt, err))
-
-				if attempt < maxRetries {
-					log.Warn().Err(err).Msgf("Stream failed, retrying in %v...", RetryDelay)
-					time.Sleep(RetryDelay)
-				}
 			}
 		}
 	}
 
+	var finalErr error
+	if len(reconnectStreamURLs) > 0 {
+		err := p.reconnectWithRotation(s, reconnectStreamURLs, reconnectStreamInfo, maxRetries)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, context.Canceled) {
+			return context.Canceled
+		}
+		finalErr = err
+	} else {
+		finalErr = fmt.Errorf("all streams failed: %s", strings.Join(allErrors, "; "))
+	}
+
 	p.setState(StateError)
 	p.setLastError("Connection failed")
-	return fmt.Errorf("playback failed after %d total attempts across all streams. Errors: %s",
-		totalAttempts, strings.Join(allErrors, "; "))
+	return finalErr
+}
+
+// If a stream recovers then drops again, the retry counter resets.
+func (p *Player) reconnectWithRotation(s *station.Station, streamURLs []string, streamInfo StreamInfo, maxRetries int) error {
+	var lastErr error
+
+	for retryCount := 1; retryCount <= maxRetries; retryCount++ {
+		streamURL := streamURLs[(retryCount-1)%len(streamURLs)]
+
+		p.setState(StateReconnecting)
+		p.setRetryInfo(retryCount, maxRetries)
+		log.Warn().Msgf("Reconnecting in %v... (%d/%d) %s", RetryDelay, retryCount, maxRetries, streamURL)
+		time.Sleep(RetryDelay)
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		p.mu.Lock()
+		if p.cancelFunc != nil {
+			p.cancelFunc()
+		}
+		p.cancelFunc = cancel
+		p.mu.Unlock()
+
+		p.setStreamInfo(streamInfo)
+
+		err := p.playStreamURL(ctx, s, streamURL)
+		if err == nil {
+			return nil
+		}
+
+		if errors.Is(err, context.Canceled) {
+			return context.Canceled
+		}
+
+		lastErr = err
+
+		// Stream recovered then dropped again — reset retry counter
+		if p.GetState() == StatePlaying {
+			log.Info().Msg("Stream was playing, resetting retry counter")
+			retryCount = 0
+			continue
+		}
+	}
+
+	return fmt.Errorf("reconnection failed: %w", lastErr)
 }
 
 func isNonRetryableError(err error) bool {
@@ -593,19 +656,8 @@ func isNonRetryableError(err error) bool {
 		strings.Contains(errStr, "status 410")
 }
 
-func isNetworkDownError(err error) bool {
-	errStr := err.Error()
-	return strings.Contains(errStr, "no such host") ||
-		strings.Contains(errStr, "network is unreachable") ||
-		strings.Contains(errStr, "no route to host") ||
-		strings.Contains(errStr, "network is down") ||
-		strings.Contains(errStr, "DNS lookup failed") ||
-		strings.Contains(errStr, "read timeout")
-}
-
 func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamURL string) error {
 	speaker.Clear()
-	p.setCurrentTrack("")
 
 	log.Debug().Msgf("Connecting to stream: %s", streamURL)
 
@@ -686,7 +738,7 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 	p.mu.Unlock()
 
 	p.wg.Add(1)
-	go p.decodeAndBuffer(ctx, streamer, pipeReader, resp.Body)
+	go p.decodeAndBuffer(ctx, streamer, pipeReader)
 
 	p.mu.Lock()
 	volumePercent := p.volumePercent
@@ -695,7 +747,12 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 	}
 	volumeLevel := percentToExponent(float64(volumePercent))
 
-	bufferedStreamer := &bufferedStreamerWrapper{player: p}
+	fadeInSamples := int(format.SampleRate.N(fadeInDuration))
+	bufferedStreamer := &bufferedStreamerWrapper{
+		player:          p,
+		fadeInRemaining: fadeInSamples,
+		fadeInTotal:     fadeInSamples,
+	}
 
 	p.volume = &effects.Volume{
 		Streamer: bufferedStreamer,
@@ -724,51 +781,49 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 	p.setLastError("")
 	log.Debug().Msgf("Now playing: %s", s.Title)
 
+	stopPlayback := func() {
+		p.closeStreamDone()
+		p.wg.Wait()
+		speaker.Clear()
+		p.mu.Lock()
+		p.isPlaying = false
+		p.isPaused = false
+		p.mu.Unlock()
+	}
+
 	select {
 	case <-ctx.Done():
-		speaker.Clear()
-		p.mu.Lock()
-		p.isPlaying = false
-		p.isPaused = false
-		p.mu.Unlock()
-
-		p.closeStreamDone()
-		p.wg.Wait()
-
+		stopPlayback()
 		return ctx.Err()
 	case err := <-p.streamErr:
-		speaker.Clear()
-		p.mu.Lock()
-		p.isPlaying = false
-		p.isPaused = false
-		p.mu.Unlock()
-
-		p.closeStreamDone()
-		p.wg.Wait()
-
+		stopPlayback()
 		return fmt.Errorf("stream error: %w", err)
 	case <-p.streamDone:
-		p.mu.Lock()
-		p.isPlaying = false
-		p.isPaused = false
-		p.mu.Unlock()
+		stopPlayback()
 		return fmt.Errorf("stream ended unexpectedly")
 	}
 }
 
 func (p *Player) readNetworkStream(ctx context.Context, respBody io.ReadCloser, bodyReader io.Reader, pipeWriter *io.PipeWriter, icyMetaint int) {
+	var exitErr error
+
 	defer func() {
 		respBody.Close()
-		pipeWriter.Close()
+		if exitErr != nil {
+			pipeWriter.CloseWithError(exitErr)
+		} else {
+			pipeWriter.Close()
+		}
 		p.wg.Done()
 		log.Debug().Msg("Network stream reader stopped")
 	}()
 
 	reportError := func(err error) {
+		exitErr = err
+		p.closeStreamDone()
 		select {
 		case p.streamErr <- err:
 		default:
-			// Channel full or closed, error already reported
 		}
 	}
 
@@ -789,7 +844,6 @@ func (p *Player) readNetworkStream(ctx context.Context, respBody io.ReadCloser, 
 		default:
 			_, err := io.CopyN(pipeWriter, bufReader, chunkSize)
 			if err != nil {
-				// Don't log errors during intentional shutdown (station switch)
 				if ctx.Err() != nil || errors.Is(err, io.ErrClosedPipe) || strings.Contains(err.Error(), "closed pipe") {
 					return
 				}
@@ -839,7 +893,7 @@ func (p *Player) readNetworkStream(ctx context.Context, respBody io.ReadCloser, 
 	}
 }
 
-func (p *Player) decodeAndBuffer(ctx context.Context, streamer beep.StreamSeekCloser, pipeReader *io.PipeReader, respBody io.ReadCloser) {
+func (p *Player) decodeAndBuffer(ctx context.Context, streamer beep.StreamSeekCloser, pipeReader *io.PipeReader) {
 	defer func() {
 		streamer.Close()
 		pipeReader.Close()
@@ -852,40 +906,9 @@ func (p *Player) decodeAndBuffer(ctx context.Context, streamer beep.StreamSeekCl
 
 		log.Debug().Msg("Decoder and buffer goroutine stopped")
 
+		// Signal playStreamURL that the stream ended so the retry loop can handle reconnection
 		if ctx.Err() == nil {
-			p.mu.Lock()
-			station := p.currentStation
-			stationID := ""
-			if station != nil {
-				stationID = station.ID
-			}
-			shouldReconnect := p.isPlaying && !p.isPaused
-			p.mu.Unlock()
-
-			if shouldReconnect && station != nil {
-				log.Info().Msg("Stream ended unexpectedly, auto-reconnecting...")
-				go func() {
-					p.setState(StateReconnecting)
-					p.Stop()
-
-					// Verify station hasn't changed during reconnect
-					p.mu.Lock()
-					currentStation := p.currentStation
-					stationChanged := currentStation == nil || currentStation.ID != stationID
-					p.mu.Unlock()
-
-					if stationChanged {
-						log.Debug().Msg("Station changed during reconnect, aborting")
-						return
-					}
-
-					if err := p.Play(station); err != nil {
-						log.Error().Err(err).Msg("Auto-reconnect failed")
-						p.setState(StateError)
-						p.setLastError("Reconnection failed")
-					}
-				}()
-			}
+			p.closeStreamDone()
 		}
 	}()
 
@@ -907,44 +930,94 @@ func (p *Player) decodeAndBuffer(ctx context.Context, streamer beep.StreamSeekCl
 			}
 
 			for i := 0; i < n; i++ {
-				sample := decodedSamples[i]
+				select {
+				case <-p.streamDone:
+					return
+				default:
+				}
 
 				select {
 				case <-ctx.Done():
 					return
 				case <-p.streamDone:
 					return
-				case p.sampleCh <- sample:
+				case p.sampleCh <- decodedSamples[i]:
 				}
 			}
 		}
 	}
 }
 
+const fadeInDuration = 50 * time.Millisecond
+
 type bufferedStreamerWrapper struct {
-	player *Player
+	player          *Player
+	fadeInRemaining int
+	fadeInTotal     int
+	done            bool
 }
 
+// Stream reads decoded audio samples into the buffer. Uses non-blocking reads
+// so that an empty channel outputs silence instead of blocking the speaker
+// mutex — this keeps oto's audio pipeline flowing and prevents stale audio
+// from accumulating in its internal buffers during network interruptions.
 func (b *bufferedStreamerWrapper) Stream(samples [][2]float64) (n int, ok bool) {
-	return b.readFromChannel(samples)
-}
-
-func (b *bufferedStreamerWrapper) readFromChannel(samples [][2]float64) (n int, ok bool) {
 	p := b.player
+	audioEnd := 0
 
-	for i := 0; i < len(samples); i++ {
-		select {
-		case sample, more := <-p.sampleCh:
-			if !more {
-				return i, i > 0
+	if !b.done {
+		for i := range samples {
+			select {
+			case <-p.streamDone:
+				b.done = true
+			default:
 			}
-			samples[i] = sample
-		case <-p.streamDone:
-			return i, i > 0
+			if b.done {
+				break
+			}
+
+			select {
+			case sample, more := <-p.sampleCh:
+				if !more {
+					b.done = true
+				} else {
+					samples[i] = sample
+					audioEnd = i + 1
+				}
+			case <-p.streamDone:
+				b.done = true
+			default:
+			}
+			if b.done || audioEnd <= i {
+				break
+			}
 		}
 	}
 
-	return len(samples), len(samples) > 0
+	// When stream ends mid-batch, discard any samples already read —
+	// they may be stale (decoded from truncated pipe data).
+	if b.done {
+		audioEnd = 0
+	}
+
+	for i := audioEnd; i < len(samples); i++ {
+		samples[i] = [2]float64{}
+	}
+
+	if b.fadeInRemaining > 0 {
+		for i := 0; i < audioEnd; i++ {
+			pos := b.fadeInTotal - b.fadeInRemaining
+			scale := float64(pos) / float64(b.fadeInTotal)
+			samples[i][0] *= scale
+			samples[i][1] *= scale
+			b.fadeInRemaining--
+			if b.fadeInRemaining <= 0 {
+				break
+			}
+		}
+	}
+
+	return len(samples), true
 }
 
 func (b *bufferedStreamerWrapper) Err() error {
@@ -988,7 +1061,6 @@ func (p *Player) fetchAndParsePLS(ctx context.Context, plsURL string) ([]string,
 	return urls, nil
 }
 
-// parseStreamInfoFromURL extracts format and bitrate from SomaFM playlist URLs.
 // URL patterns: groovesalad130.pls (MP3 128k), groovesalad-aac.pls (AAC), etc.
 func parseStreamInfoFromURL(url string) StreamInfo {
 	info := StreamInfo{
