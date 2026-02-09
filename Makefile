@@ -17,11 +17,14 @@ test:
 lint:
 	golangci-lint run
 
-check: lint test build
+vuln:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+check: lint test vuln build
 	goreleaser check
 
 clean:
 	go clean
 	rm -f $(BINARY_NAME) $(BINARY_NAME)-*
 
-.PHONY: build build-all test lint check clean
+.PHONY: build build-all test lint vuln check clean

@@ -29,7 +29,7 @@ func TestHashURL(t *testing.T) {
 			}
 
 			for _, c := range result {
-				if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+				if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 					t.Errorf("hashURL(%q) contains non-hex character: %c", tt.url, c)
 				}
 			}
