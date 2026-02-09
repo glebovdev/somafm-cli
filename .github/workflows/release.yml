@@ -18,9 +18,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: "1.24"
+          go-version: "1.25.7"
 
       - name: Install Linux audio dependencies (amd64 + arm64 cross-compile)
         run: |

@@ -1,0 +1,17 @@
+version: "2"
+
+linters:
+  default: standard
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1000"
+        - "-ST1003"
+        - "-QF*"
+  exclusions:
+    rules:
+      - text: "Error return value of .+Close"
+        linters: [errcheck]
+      - text: "Error return value of `os.Remove`"
+        linters: [errcheck]

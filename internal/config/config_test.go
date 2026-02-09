@@ -24,9 +24,7 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestConfigSaveAndLoad(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tmpDir)
 
 	testCfg := &Config{
 		Volume:      85,
@@ -59,9 +57,7 @@ func TestConfigSaveAndLoad(t *testing.T) {
 
 func TestLoadNonExistentConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tmpDir)
 
 	cfg, err := Load()
 	if err != nil {
@@ -94,9 +90,7 @@ func TestVolumeValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			originalHome := os.Getenv("HOME")
-			os.Setenv("HOME", tmpDir)
-			defer os.Setenv("HOME", originalHome)
+			t.Setenv("HOME", tmpDir)
 
 			testCfg := &Config{
 				Volume:      tt.inputVolume,
@@ -122,9 +116,7 @@ func TestVolumeValidation(t *testing.T) {
 
 func TestThemeDefaults(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tmpDir)
 
 	cfg, err := Load()
 	if err != nil {
@@ -150,9 +142,7 @@ func TestThemeDefaults(t *testing.T) {
 
 func TestThemePersistence(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tmpDir)
 
 	testCfg := &Config{
 		Volume:      70,
@@ -414,9 +404,7 @@ func TestGetColor(t *testing.T) {
 
 func TestFavoritesPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tmpDir)
 
 	testCfg := &Config{
 		Volume:    70,
@@ -448,9 +436,7 @@ func TestFavoritesPersistence(t *testing.T) {
 
 func TestAutostartPersistence(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tmpDir)
 
 	testCfg := &Config{
 		Volume:      70,
@@ -476,9 +462,7 @@ func TestAutostartPersistence(t *testing.T) {
 
 func TestLoadInvalidYAML(t *testing.T) {
 	tmpDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tmpDir)
 
 	configDir := filepath.Join(tmpDir, ConfigDir)
 	_ = os.MkdirAll(configDir, 0755)
