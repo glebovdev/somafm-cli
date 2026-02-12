@@ -1,17 +1,17 @@
-# SomaFM CLI
+# SomaFM CLI <sub><sup>| Terminal radio player for SomaFM</sup></sub>
 
 [![CI](https://github.com/glebovdev/somafm-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/glebovdev/somafm-cli/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/glebovdev/somafm-cli)](https://github.com/glebovdev/somafm-cli/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A terminal-based music player for [SomaFM](https://somafm.com/) radio stations built in Go.
+A terminal-based music player for [SomaFM](https://somafm.com/) radio stations built in Go. Built-in audio streaming — no external player like `mpv` or `vlc` needed.
 
 ![Demo](demo.gif)
 
 ## Features
 
-- Stream all SomaFM radio stations
-- Rich terminal UI with station browser
+- Stream all SomaFM radio stations with built-in playback
+- Rich terminal UI with station browser and real-time track display
 - Volume control with visual feedback
 - Pause/resume playback
 - Stations sorted by listener count
