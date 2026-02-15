@@ -243,9 +243,7 @@ func TestNewSomaFMClient(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("NewSomaFMClient() returned nil")
-	}
-
-	if client.client == nil {
+	} else if client.client == nil {
 		t.Error("NewSomaFMClient() client.client is nil")
 	}
 }

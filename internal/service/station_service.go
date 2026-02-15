@@ -180,19 +180,23 @@ func (s *StationService) GetCurrentTrackForStation(stationID string) (string, er
 }
 
 func (s *StationService) StartPeriodicRefresh(interval time.Duration, callback func([]station.Station)) {
+	s.StopPeriodicRefresh()
+
 	s.mu.Lock()
 	s.onRefresh = callback
 	s.stopRefresh = make(chan struct{})
 	s.refreshTicker = time.NewTicker(interval)
+	ticker := s.refreshTicker
+	stopCh := s.stopRefresh
 	s.mu.Unlock()
 
 	go func() {
 		for {
 			select {
-			case <-s.refreshTicker.C:
+			case <-ticker.C:
 				s.refreshStationsInBackground()
-			case <-s.stopRefresh:
-				s.refreshTicker.Stop()
+			case <-stopCh:
+				ticker.Stop()
 				return
 			}
 		}
@@ -230,5 +234,5 @@ func (s *StationService) refreshStationsInBackground() {
 		callback(newStations)
 	}
 
-	log.Debug().Int("count", len(s.stations)).Msg("Station data refreshed in background")
+	log.Debug().Int("count", len(newStations)).Msg("Station data refreshed in background")
 }

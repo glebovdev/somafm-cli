@@ -447,10 +447,14 @@ func (ui *UI) createHeader() tview.Primitive {
 }
 
 func (ui *UI) updateLogoPanel(s *station.Station) {
+	stationID := s.ID
 	go func() {
 		img, err := ui.stationService.LoadImage(s.XLImage)
 		if err != nil {
 			ui.app.QueueUpdateDraw(func() {
+				if ui.currentStation == nil || ui.currentStation.ID != stationID {
+					return
+				}
 				ui.logoPanel.SetDrawFunc(func(screen tcell.Screen, x, y, width, height int) (int, int, int, int) {
 					errorMsg := fmt.Sprintf("Failed to load image: %v", err)
 					tview.Print(screen, errorMsg, x, y, 10, tview.AlignCenter, tcell.ColorRed)
@@ -461,6 +465,9 @@ func (ui *UI) updateLogoPanel(s *station.Station) {
 		}
 
 		ui.app.QueueUpdateDraw(func() {
+			if ui.currentStation == nil || ui.currentStation.ID != stationID {
+				return
+			}
 			ui.logoPanel.SetImage(img)
 		})
 	}()

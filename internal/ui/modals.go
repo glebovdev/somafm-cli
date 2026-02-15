@@ -57,6 +57,8 @@ func (ui *UI) showPlaybackErrorModal(message string) {
 		ui.pages.RemovePage("error-modal")
 		ui.app.SetFocus(ui.stationList)
 		if ui.currentStation != nil {
+			ui.safeCloseChannel()
+			ui.recreateStopChannel()
 			ui.startPlayingAnimation()
 			go func() {
 				err := ui.player.Play(ui.currentStation)

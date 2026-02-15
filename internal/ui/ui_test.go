@@ -10,14 +10,13 @@ func TestNewPlayingSpinner(t *testing.T) {
 
 	if spinner == nil {
 		t.Fatal("NewPlayingSpinner() returned nil")
-	}
-
-	if len(spinner.Frames) == 0 {
-		t.Error("PlayingSpinner.Frames is empty")
-	}
-
-	if spinner.FPS <= 0 {
-		t.Error("PlayingSpinner.FPS should be positive")
+	} else {
+		if len(spinner.Frames) == 0 {
+			t.Error("PlayingSpinner.Frames is empty")
+		}
+		if spinner.FPS <= 0 {
+			t.Error("PlayingSpinner.FPS should be positive")
+		}
 	}
 }
 
@@ -322,17 +321,15 @@ func TestNewStatusRenderer(t *testing.T) {
 
 	if renderer == nil {
 		t.Fatal("NewStatusRenderer() returned nil")
-	}
-
-	if renderer.maxAnimFrame <= 0 {
-		t.Error("maxAnimFrame should be positive")
-	}
-
-	if renderer.ticksPerFrame <= 0 {
-		t.Error("ticksPerFrame should be positive")
-	}
-
-	if renderer.bufferTicksPerUpdate <= 0 {
-		t.Error("bufferTicksPerUpdate should be positive")
+	} else {
+		if renderer.maxAnimFrame <= 0 {
+			t.Error("maxAnimFrame should be positive")
+		}
+		if renderer.ticksPerFrame <= 0 {
+			t.Error("ticksPerFrame should be positive")
+		}
+		if renderer.bufferTicksPerUpdate <= 0 {
+			t.Error("bufferTicksPerUpdate should be positive")
+		}
 	}
 }
