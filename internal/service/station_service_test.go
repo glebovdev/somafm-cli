@@ -212,13 +212,10 @@ func TestGetStation(t *testing.T) {
 				if result != nil {
 					t.Errorf("GetStation(%d) = %v, want nil", tt.index, result)
 				}
-			} else {
-				if result == nil {
-					t.Fatalf("GetStation(%d) = nil, want station", tt.index)
-				}
-				if result.ID != tt.expectedID {
-					t.Errorf("GetStation(%d).ID = %q, want %q", tt.index, result.ID, tt.expectedID)
-				}
+			} else if result == nil {
+				t.Fatalf("GetStation(%d) = nil, want station", tt.index)
+			} else if result.ID != tt.expectedID {
+				t.Errorf("GetStation(%d).ID = %q, want %q", tt.index, result.ID, tt.expectedID)
 			}
 		})
 	}

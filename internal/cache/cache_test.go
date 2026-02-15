@@ -247,14 +247,13 @@ func TestNewCache(t *testing.T) {
 
 	if cache == nil {
 		t.Fatal("NewCache() returned nil")
-	}
-
-	if cache.baseDir == "" {
-		t.Error("NewCache() cache.baseDir is empty")
-	}
-
-	if cache.expiry != DefaultExpiry {
-		t.Errorf("NewCache() cache.expiry = %v, want %v", cache.expiry, DefaultExpiry)
+	} else {
+		if cache.baseDir == "" {
+			t.Error("NewCache() cache.baseDir is empty")
+		}
+		if cache.expiry != DefaultExpiry {
+			t.Errorf("NewCache() cache.expiry = %v, want %v", cache.expiry, DefaultExpiry)
+		}
 	}
 }
 

@@ -211,9 +211,9 @@ func (p *Player) initSpeaker(sampleRate beep.SampleRate) error {
 
 func (p *Player) Stop() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if p.cancelFunc == nil && !p.isPlaying {
+		p.mu.Unlock()
 		return
 	}
 
@@ -225,6 +225,9 @@ func (p *Player) Stop() {
 	speaker.Clear()
 	p.isPlaying = false
 	p.isPaused = false
+	p.mu.Unlock()
+
+	p.wg.Wait()
 
 	p.streamAliveMu.Lock()
 	p.streamAlive = false
@@ -1035,6 +1038,10 @@ func (p *Player) fetchAndParsePLS(ctx context.Context, plsURL string) ([]string,
 		return nil, fmt.Errorf("failed to fetch PLS file: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("PLS file returned status %d: %s", resp.StatusCode, resp.Status)
+	}
 
 	var urls []string
 	scanner := bufio.NewScanner(resp.Body)
