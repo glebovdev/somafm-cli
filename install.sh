@@ -27,7 +27,7 @@ warn() {
 }
 
 error() {
-    printf "${RED}[ERROR]${NC} %s\n" "$1"
+    printf "${RED}[ERROR]${NC} %s\n" "$1" >&2
     exit 1
 }
 
@@ -63,7 +63,7 @@ verify_checksum() {
 
     info "Verifying checksum..."
 
-    CHECKSUMS=$(curl -sSL "${CHECKSUM_URL}") || {
+    CHECKSUMS=$(curl -fsSL "${CHECKSUM_URL}") || {
         warn "Could not download checksums, skipping verification"
         return 0
     }
@@ -92,8 +92,8 @@ verify_checksum() {
 
 # Download and install
 install() {
-    OS=$(detect_os)
-    ARCH=$(detect_arch)
+    OS=$(detect_os) || exit 1
+    ARCH=$(detect_arch) || exit 1
 
     info "Detected OS: ${OS}, Arch: ${ARCH}"
 
@@ -120,10 +120,10 @@ install() {
 
     # Create temp directory
     TMP_DIR=$(mktemp -d)
-    trap "rm -rf ${TMP_DIR}" EXIT
+    trap "rm -rf ${TMP_DIR}" EXIT INT TERM
 
     # Download
-    curl -sSL "${DOWNLOAD_URL}" -o "${TMP_DIR}/${FILENAME}"
+    curl -fsSL "${DOWNLOAD_URL}" -o "${TMP_DIR}/${FILENAME}"
 
     # Verify checksum
     cd "${TMP_DIR}"
@@ -137,6 +137,15 @@ install() {
     fi
 
     # Install
+    if [ ! -d "${INSTALL_DIR}" ]; then
+        info "Creating ${INSTALL_DIR}"
+        if [ -w "$(dirname "${INSTALL_DIR}")" ]; then
+            mkdir -p "${INSTALL_DIR}"
+        else
+            sudo mkdir -p "${INSTALL_DIR}"
+        fi
+    fi
+
     if [ -w "${INSTALL_DIR}" ]; then
         mv "${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
     else
@@ -152,7 +161,10 @@ install() {
     if "${INSTALL_DIR}/${BINARY_NAME}" --version >/dev/null 2>&1; then
         info "Verified: $(${INSTALL_DIR}/${BINARY_NAME} --version | head -1)"
     else
-        warn "Binary installed but verification failed"
+        warn "Binary installed but could not run it"
+        if [ "$OS" = "linux" ]; then
+            warn "Linux requires libasound2 (ALSA). Install it with: sudo apt-get install libasound2"
+        fi
     fi
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/gdamore/tcell/v2"
 	"gopkg.in/yaml.v3"
@@ -65,6 +66,8 @@ type Config struct {
 	Autostart   bool     `yaml:"autostart"`
 	Favorites   []string `yaml:"favorites"`
 	Theme       Theme    `yaml:"theme"`
+
+	saveMu sync.Mutex `yaml:"-"`
 }
 
 func GetConfigPath() (string, error) {
@@ -104,6 +107,9 @@ func Load() (*Config, error) {
 
 // Save writes the configuration to disk atomically using temp file + rename.
 func (c *Config) Save() error {
+	c.saveMu.Lock()
+	defer c.saveMu.Unlock()
+
 	configPath, err := GetConfigPath()
 	if err != nil {
 		return err
