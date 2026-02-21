@@ -73,10 +73,6 @@ func TestPlayerStateString(t *testing.T) {
 func TestNewPlayer(t *testing.T) {
 	p := NewPlayer()
 
-	if p == nil {
-		t.Fatal("NewPlayer returned nil")
-	}
-
 	if p.isPlaying {
 		t.Error("New player should not be playing")
 	}
@@ -88,25 +84,36 @@ func TestNewPlayer(t *testing.T) {
 
 func TestIsNonRetryableError(t *testing.T) {
 	tests := []struct {
+		name     string
 		err      error
 		expected bool
 	}{
-		{errors.New("status 401"), true},
-		{errors.New("status 403"), true},
-		{errors.New("status 404"), true},
-		{errors.New("status 410"), true},
-		{errors.New("status 500"), false},
-		{errors.New("connection refused"), false},
-		{errors.New("timeout"), false},
+		{"401", &httpStatusError{StatusCode: 401, Status: "Unauthorized"}, true},
+		{"403", &httpStatusError{StatusCode: 403, Status: "Forbidden"}, true},
+		{"404", &httpStatusError{StatusCode: 404, Status: "Not Found"}, true},
+		{"410", &httpStatusError{StatusCode: 410, Status: "Gone"}, true},
+		{"500", &httpStatusError{StatusCode: 500, Status: "Internal Server Error"}, false},
+		{"503", &httpStatusError{StatusCode: 503, Status: "Service Unavailable"}, false},
+		{"wrapped 404", fmt.Errorf("stream failed: %w", &httpStatusError{StatusCode: 404}), true},
+		{"generic error", errors.New("connection refused"), false},
+		{"timeout", errors.New("timeout"), false},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.err.Error(), func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			result := isNonRetryableError(tt.err)
 			if result != tt.expected {
-				t.Errorf("isNonRetryableError(%q) = %v, want %v", tt.err, result, tt.expected)
+				t.Errorf("isNonRetryableError(%v) = %v, want %v", tt.err, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestHttpStatusErrorMessage(t *testing.T) {
+	err := &httpStatusError{StatusCode: 404, Status: "404 Not Found"}
+	expected := "stream returned status 404: 404 Not Found"
+	if err.Error() != expected {
+		t.Errorf("got %q, want %q", err.Error(), expected)
 	}
 }
 

@@ -650,13 +650,24 @@ func (p *Player) reconnectWithRotation(s *station.Station, streamURLs []string, 
 	return fmt.Errorf("reconnection failed: %w", lastErr)
 }
 
+type httpStatusError struct {
+	StatusCode int
+	Status     string
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("stream returned status %d: %s", e.StatusCode, e.Status)
+}
+
 func isNonRetryableError(err error) bool {
-	errStr := err.Error()
-	// HTTP errors that won't change with retry on this specific URL
-	return strings.Contains(errStr, "status 401") ||
-		strings.Contains(errStr, "status 403") ||
-		strings.Contains(errStr, "status 404") ||
-		strings.Contains(errStr, "status 410")
+	var statusErr *httpStatusError
+	if errors.As(err, &statusErr) {
+		switch statusErr.StatusCode {
+		case 401, 403, 404, 410:
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamURL string) error {
@@ -681,7 +692,7 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return fmt.Errorf("stream returned status %d: %s", resp.StatusCode, resp.Status)
+		return &httpStatusError{StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 
 	var icyMetaint int
@@ -869,6 +880,15 @@ func (p *Player) readNetworkStream(ctx context.Context, respBody io.ReadCloser, 
 				}
 
 				metaLen := int(metaLenByte) * 16
+				if metaLen > 4080 {
+					log.Warn().Int("metaLen", metaLen).Msg("ICY metadata too large, skipping")
+					if _, err := io.CopyN(io.Discard, bufReader, int64(metaLen)); err != nil {
+						if ctx.Err() != nil {
+							return
+						}
+					}
+					continue
+				}
 				if metaLen > 0 {
 					metaData := make([]byte, metaLen)
 					n, err := io.ReadFull(bufReader, metaData)
@@ -1083,12 +1103,12 @@ func parseStreamInfoFromURL(url string) StreamInfo {
 		info.Format = "AAC"
 	}
 
-	bitrates := []int{320, 256, 192, 130, 128, 64, 32}
-	for _, br := range bitrates {
+	// SomaFM URL convention: groovesalad130.pls = MP3 128kbps (130 is an internal ID, not actual bitrate)
+	for _, br := range []int{320, 256, 192, 130, 128, 64, 32} {
 		brStr := fmt.Sprintf("%d", br)
 		if strings.Contains(url, brStr+".pls") || strings.Contains(url, brStr+".") {
 			info.Bitrate = br
-			if br == 130 { // SomaFM uses 130 for 128kbps streams
+			if br == 130 {
 				info.Bitrate = 128
 			}
 			break
