@@ -28,6 +28,20 @@ func (ui *UI) createStationListTable() *tview.Table {
 		Foreground(ui.colors.background).
 		Background(ui.colors.highlight))
 
+	table.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if event == nil || action != tview.MouseLeftDoubleClick {
+			return action, event
+		}
+		x, y := event.Position()
+		row, _ := table.CellAt(x, y)
+		if row <= 0 || row > ui.stationService.StationCount() {
+			return action, event
+		}
+		table.Select(row, 0)
+		ui.onStationSelected(row - 1)
+		return tview.MouseConsumed, nil
+	})
+
 	table.SetCell(0, 0, tview.NewTableCell(" ").
 		SetTextColor(ui.colors.stationListHeaderForeground).
 		SetBackgroundColor(ui.colors.stationListHeaderBackground).
