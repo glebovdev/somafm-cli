@@ -1,6 +1,6 @@
 module github.com/glebovdev/somafm-cli
 
-go 1.25.0
+go 1.25.6
 
 require (
 	github.com/gdamore/tcell/v2 v2.13.8
@@ -21,6 +21,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/skrashevich/go-aac v0.1.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/term v0.40.0 // indirect

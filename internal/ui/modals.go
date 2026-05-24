@@ -168,6 +168,7 @@ func (ui *UI) showHelpModal() {
 [%s]APPLICATION[-]
   [%s]?[-]          Show this help
   [%s]a[-]          About %s
+  [%s]s[-]          Toggle MP3 / AAC stream format
   [%s]q[-] / [%s]Esc[-]    Quit
 
 [%s]CONFIG[-]: %s`,
@@ -178,7 +179,7 @@ func (ui *UI) showHelpModal() {
 		keyColor,
 		keyColor, keyColor, keyColor,
 		keyColor,
-		keyColor, keyColor, config.AppName, keyColor, keyColor,
+		keyColor, keyColor, config.AppName, keyColor, keyColor, keyColor,
 		keyColor, configPath)
 
 	ui.showInfoModal("Help", helpText)
