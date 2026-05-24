@@ -1,7 +1,10 @@
 // Package station defines the data structures for SomaFM radio stations.
 package station
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // Playlist represents a streaming endpoint for a radio station.
 type Playlist struct {
@@ -44,47 +47,45 @@ func (s *Station) GetBestPlaylistURL() string {
 }
 
 // GetPlaylistURLs returns all playlist URLs sorted by preference.
-// The preferred format is ordered first, then the alternate known format, then any others.
+// The preferred format is ordered first (highest quality first), then the
+// alternate known format, then any others.
 func (s *Station) GetPlaylistURLs(preferredFormat string) []string {
 	preferred := strings.ToLower(strings.TrimSpace(preferredFormat))
 	if preferred != "aac" {
 		preferred = "mp3"
 	}
-
 	secondary := "aac"
 	if preferred == "aac" {
 		secondary = "mp3"
 	}
 
-	var preferredHighest, preferredOther, secondaryHighest, secondaryOther, other []string
-
-	for _, playlist := range s.Playlists {
-		format := strings.ToLower(strings.TrimSpace(playlist.Format))
-		switch format {
-		case preferred:
-			if playlist.Quality == "highest" {
-				preferredHighest = append(preferredHighest, playlist.URL)
-			} else {
-				preferredOther = append(preferredOther, playlist.URL)
-			}
-		case secondary:
-			if playlist.Quality == "highest" {
-				secondaryHighest = append(secondaryHighest, playlist.URL)
-			} else {
-				secondaryOther = append(secondaryOther, playlist.URL)
-			}
+	// Build a priority for ordering: lower = better.
+	priority := func(pl Playlist) int {
+		format := strings.ToLower(strings.TrimSpace(pl.Format))
+		qualityBonus := 0
+		if pl.Quality == "highest" {
+			qualityBonus = 1
+		}
+		switch {
+		case format == preferred:
+			return 0 - qualityBonus // 0 or -1 (highest first)
+		case format == secondary:
+			return 2 - qualityBonus // 2 or 1
 		default:
-			other = append(other, playlist.URL)
+			return 4
 		}
 	}
 
-	result := make([]string, 0, len(s.Playlists))
-	result = append(result, preferredHighest...)
-	result = append(result, preferredOther...)
-	result = append(result, secondaryHighest...)
-	result = append(result, secondaryOther...)
-	result = append(result, other...)
+	sorted := make([]Playlist, len(s.Playlists))
+	copy(sorted, s.Playlists)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return priority(sorted[i]) < priority(sorted[j])
+	})
 
+	result := make([]string, len(sorted))
+	for i, pl := range sorted {
+		result[i] = pl.URL
+	}
 	return result
 }
 

@@ -205,8 +205,6 @@ func (p *Player) SetPreferredFormat(format string) {
 }
 
 func (p *Player) GetPreferredFormat() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	return p.preferredFormat
 }
 
@@ -532,13 +530,10 @@ func (p *Player) playWithRetry(s *station.Station, maxRetries int) error {
 	}
 
 	var reconnectStreamURLs []string
-	var reconnectStreamInfo StreamInfo
 
 playlists:
 	for playlistIdx, playlistURL := range playlistURLs {
 		log.Debug().Msgf("Trying playlist %d/%d: %s", playlistIdx+1, len(playlistURLs), playlistURL)
-
-		streamInfo := parseStreamInfoFromURL(playlistURL)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		streamURLs, err := p.fetchAndParsePLS(ctx, playlistURL)
@@ -589,7 +584,6 @@ playlists:
 				if p.GetState() == StatePlaying {
 					log.Info().Msg("Stream was playing, entering reconnect mode")
 					reconnectStreamURLs = streamURLs
-					reconnectStreamInfo = streamInfo
 					break playlists
 				}
 
@@ -606,7 +600,7 @@ playlists:
 
 	var finalErr error
 	if len(reconnectStreamURLs) > 0 {
-		err := p.reconnectWithRotation(s, reconnectStreamURLs, reconnectStreamInfo, maxRetries)
+		err := p.reconnectWithRotation(s, reconnectStreamURLs, maxRetries)
 		if err == nil {
 			return nil
 		}
@@ -624,7 +618,7 @@ playlists:
 }
 
 // If a stream recovers then drops again, the retry counter resets.
-func (p *Player) reconnectWithRotation(s *station.Station, streamURLs []string, streamInfo StreamInfo, maxRetries int) error {
+func (p *Player) reconnectWithRotation(s *station.Station, streamURLs []string, maxRetries int) error {
 	var lastErr error
 
 	for retryCount := 1; retryCount <= maxRetries; retryCount++ {
@@ -643,8 +637,6 @@ func (p *Player) reconnectWithRotation(s *station.Station, streamURLs []string, 
 		}
 		p.cancelFunc = cancel
 		p.mu.Unlock()
-
-		p.setStreamInfo(streamInfo)
 
 		err := p.playStreamURL(ctx, s, streamURL)
 		if err == nil {
@@ -765,10 +757,6 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 			resp.Body.Close()
 			return fmt.Errorf("failed to initialize audio output: %w", err)
 		}
-
-		p.mu.Lock()
-		p.format = format
-		p.mu.Unlock()
 
 		p.wg.Add(1)
 		go p.decodeAndBuffer(ctx, streamer, pipeReader)
@@ -937,12 +925,10 @@ func (p *Player) decodeAACStream(ctx context.Context, pipeReader *io.PipeReader)
 		default:
 		}
 
-		log.Debug().Msg("AAC decoder waiting for next frame")
-
 		frame, frameHeader, err := readAACFrame(reader)
 		if err != nil {
 			if ctx.Err() != nil || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				log.Debug().Err(err).Msg("AAC decoder exiting while waiting for next frame")
+				log.Debug().Err(err).Msg("AAC decoder exiting")
 				return
 			}
 			log.Error().Err(err).Msg("Error reading AAC frame")
@@ -950,16 +936,12 @@ func (p *Player) decodeAACStream(ctx context.Context, pipeReader *io.PipeReader)
 			return
 		}
 
-		log.Debug().Int("aac_frame_bytes", len(frame)).Int("aac_channel_config", frameHeader.ChannelConfig).Msg("AAC frame read")
-
 		samples, err := dec.DecodeFrame(frame)
 		if err != nil {
 			log.Error().Err(err).Msg("Error decoding AAC frame")
 			reportError(fmt.Errorf("aac decode error: %w", err))
 			return
 		}
-
-		log.Debug().Int("aac_pcm_samples", len(samples)).Msg("AAC frame decoded")
 
 		if err := p.enqueueAACSamples(samples, frameHeader); err != nil {
 			reportError(err)
