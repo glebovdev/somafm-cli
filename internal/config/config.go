@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/gdamore/tcell/v2"
@@ -27,6 +28,9 @@ const (
 	DefaultVolume  = 70
 	MinVolume      = 0
 	MaxVolume      = 100
+
+	AudioFormatMP3 = "mp3"
+	AudioFormatAAC = "aac"
 )
 
 // ClampVolume ensures volume is within the valid range [0, 100].
@@ -38,6 +42,15 @@ func ClampVolume(volume int) int {
 		return MaxVolume
 	}
 	return volume
+}
+
+func NormalizePreferredFormat(format string) string {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case AudioFormatAAC:
+		return AudioFormatAAC
+	default:
+		return AudioFormatMP3
+	}
 }
 
 // AppVersion can be overridden at build time using ldflags:
@@ -61,11 +74,12 @@ type Theme struct {
 }
 
 type Config struct {
-	Volume      int      `yaml:"volume"`
-	LastStation string   `yaml:"last_station"`
-	Autostart   bool     `yaml:"autostart"`
-	Favorites   []string `yaml:"favorites"`
-	Theme       Theme    `yaml:"theme"`
+	Volume          int      `yaml:"volume"`
+	LastStation     string   `yaml:"last_station"`
+	Autostart       bool     `yaml:"autostart"`
+	PreferredFormat string   `yaml:"preferred_format"`
+	Favorites       []string `yaml:"favorites"`
+	Theme           Theme    `yaml:"theme"`
 
 	saveMu sync.Mutex `yaml:"-"`
 }
@@ -101,6 +115,7 @@ func Load() (*Config, error) {
 	}
 
 	cfg.Volume = ClampVolume(cfg.Volume)
+	cfg.PreferredFormat = NormalizePreferredFormat(cfg.PreferredFormat)
 
 	return cfg, nil
 }
@@ -156,10 +171,11 @@ func (c *Config) Save() error {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Volume:      DefaultVolume,
-		LastStation: "",
-		Autostart:   false,
-		Favorites:   []string{},
+		Volume:          DefaultVolume,
+		LastStation:     "",
+		Autostart:       false,
+		PreferredFormat: AudioFormatMP3,
+		Favorites:       []string{},
 		Theme: Theme{
 			Background:                  "#1a1b25",
 			Foreground:                  "#a3aacb",

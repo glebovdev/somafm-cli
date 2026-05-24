@@ -163,6 +163,36 @@ func TestGetAllPlaylistURLs(t *testing.T) {
 	}
 }
 
+func TestGetPlaylistURLsPreferredAAC(t *testing.T) {
+	station := Station{
+		Playlists: []Playlist{
+			{URL: "http://example.com/mp3-low.pls", Format: "mp3", Quality: "low"},
+			{URL: "http://example.com/aac-highest.pls", Format: "aac", Quality: "highest"},
+			{URL: "http://example.com/aac-low.pls", Format: "aac", Quality: "low"},
+			{URL: "http://example.com/mp3-highest.pls", Format: "mp3", Quality: "highest"},
+			{URL: "http://example.com/ogg-med.pls", Format: "ogg", Quality: "medium"},
+		},
+	}
+
+	expected := []string{
+		"http://example.com/aac-highest.pls",
+		"http://example.com/aac-low.pls",
+		"http://example.com/mp3-highest.pls",
+		"http://example.com/mp3-low.pls",
+		"http://example.com/ogg-med.pls",
+	}
+
+	result := station.GetPlaylistURLs("aac")
+	if len(result) != len(expected) {
+		t.Fatalf("GetPlaylistURLs(aac) returned %d items, want %d: got %v", len(result), len(expected), result)
+	}
+	for i, url := range result {
+		if url != expected[i] {
+			t.Errorf("GetPlaylistURLs(aac)[%d] = %q, want %q", i, url, expected[i])
+		}
+	}
+}
+
 func TestStationFields(t *testing.T) {
 	station := Station{
 		ID:          "groovesalad",

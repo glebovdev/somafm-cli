@@ -118,6 +118,7 @@ func NewUI(player *player.Player, stationService *service.StationService, startR
 	ui.colors.modalBackground = config.GetColor(cfg.Theme.ModalBackground)
 
 	player.SetVolume(cfg.Volume)
+	player.SetPreferredFormat(cfg.PreferredFormat)
 	log.Debug().Msgf("Loaded volume from config: %d%%", cfg.Volume)
 
 	ui.statusRenderer = NewStatusRenderer(player)
@@ -131,6 +132,7 @@ func (ui *UI) SaveConfig() {
 	if !ui.isMuted {
 		ui.config.Volume = ui.currentVolume
 	}
+	ui.config.PreferredFormat = ui.player.GetPreferredFormat()
 	if ui.currentStation != nil {
 		ui.config.LastStation = ui.currentStation.ID
 	}
@@ -139,6 +141,40 @@ func (ui *UI) SaveConfig() {
 	if err := ui.config.Save(); err != nil {
 		log.Error().Err(err).Msg("Failed to save config")
 	}
+}
+
+func (ui *UI) togglePreferredFormat() {
+	currentFormat := ui.player.GetPreferredFormat()
+	newFormat := config.AudioFormatAAC
+	if currentFormat == config.AudioFormatAAC {
+		newFormat = config.AudioFormatMP3
+	}
+
+	ui.player.SetPreferredFormat(newFormat)
+	ui.config.PreferredFormat = newFormat
+	ui.SaveConfig()
+
+	if ui.currentStation == nil || (!ui.player.IsPlaying() && !ui.player.IsPaused()) {
+		return
+	}
+
+	station := ui.currentStation
+	ui.player.Stop()
+	ui.safeCloseChannel()
+	ui.recreateStopChannel()
+	ui.startPlayingAnimation()
+
+	go func() {
+		err := ui.player.Play(station)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+			ui.app.QueueUpdateDraw(func() {
+				ui.showError(err)
+			})
+		}
+	}()
 }
 
 func (ui *UI) safeCloseChannel() {
@@ -766,6 +802,9 @@ func (ui *UI) globalInputHandler(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Rune() {
 		case 'q', 'Q':
 			ui.stop()
+			return nil
+		case 's', 'S':
+			ui.togglePreferredFormat()
 			return nil
 		case ' ':
 			if ui.player.IsPlaying() || ui.player.IsPaused() {

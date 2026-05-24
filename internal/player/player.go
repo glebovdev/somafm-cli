@@ -20,6 +20,9 @@ import (
 	"github.com/gopxl/beep/v2/mp3"
 	"github.com/gopxl/beep/v2/speaker"
 	"github.com/rs/zerolog/log"
+	aacadts "github.com/skrashevich/go-aac/pkg/adts"
+	aacdecoder "github.com/skrashevich/go-aac/pkg/decoder"
+	aactables "github.com/skrashevich/go-aac/pkg/tables"
 )
 
 const (
@@ -117,16 +120,17 @@ func (cr *contextReader) Read(p []byte) (n int, err error) {
 
 // Player manages audio streaming and playback for SomaFM radio stations.
 type Player struct {
-	format        beep.Format
-	volume        *effects.Volume
-	ctrl          *beep.Ctrl
-	mu            sync.Mutex
-	cancelFunc    context.CancelFunc
-	isPaused      bool
-	isPlaying     bool
-	speakerInit   bool
-	volumePercent int
-	httpClient    *http.Client
+	format          beep.Format
+	volume          *effects.Volume
+	ctrl            *beep.Ctrl
+	mu              sync.Mutex
+	cancelFunc      context.CancelFunc
+	isPaused        bool
+	isPlaying       bool
+	speakerInit     bool
+	volumePercent   int
+	httpClient      *http.Client
+	preferredFormat string
 
 	sampleCh       chan [2]float64
 	wg             sync.WaitGroup
@@ -184,20 +188,31 @@ func NewPlayer() *Player {
 			NumChannels: 2,
 			Precision:   2,
 		},
-		speakerInit:   false,
-		isPaused:      false,
-		isPlaying:     false,
-		volumePercent: -1,
-		httpClient:    httpClient,
-		currentTrack:  "",
+		speakerInit:     false,
+		isPaused:        false,
+		isPlaying:       false,
+		volumePercent:   -1,
+		httpClient:      httpClient,
+		preferredFormat: config.AudioFormatMP3,
+		currentTrack:    "",
 	}
+}
+
+func (p *Player) SetPreferredFormat(format string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.preferredFormat = config.NormalizePreferredFormat(format)
+}
+
+func (p *Player) GetPreferredFormat() string {
+	return p.preferredFormat
 }
 
 func (p *Player) initSpeaker(sampleRate beep.SampleRate) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.speakerInit || sampleRate != p.format.SampleRate {
+	if !p.speakerInit {
 		err := speaker.Init(sampleRate, sampleRate.N(SpeakerBufferSize))
 		if err != nil {
 			return fmt.Errorf("failed to initialize speaker: %w", err)
@@ -495,7 +510,7 @@ func (p *Player) Play(s *station.Station) error {
 }
 
 func (p *Player) playWithRetry(s *station.Station, maxRetries int) error {
-	playlistURLs := s.GetAllPlaylistURLs()
+	playlistURLs := s.GetPlaylistURLs(p.GetPreferredFormat())
 	if len(playlistURLs) == 0 {
 		p.setState(StateError)
 		p.setLastError("No playlists available")
@@ -515,13 +530,10 @@ func (p *Player) playWithRetry(s *station.Station, maxRetries int) error {
 	}
 
 	var reconnectStreamURLs []string
-	var reconnectStreamInfo StreamInfo
 
 playlists:
 	for playlistIdx, playlistURL := range playlistURLs {
 		log.Debug().Msgf("Trying playlist %d/%d: %s", playlistIdx+1, len(playlistURLs), playlistURL)
-
-		streamInfo := parseStreamInfoFromURL(playlistURL)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		streamURLs, err := p.fetchAndParsePLS(ctx, playlistURL)
@@ -556,12 +568,13 @@ playlists:
 				p.cancelFunc = cancel
 				p.mu.Unlock()
 
-				p.setStreamInfo(streamInfo)
-
 				err := p.playStreamURL(ctx, s, streamURL)
 				if err == nil {
 					return nil
 				}
+
+				log.Debug().Err(err).Msgf("Playback attempt failed for stream %d/%d (attempt %d/%d)",
+					urlIdx+1, len(streamURLs), attempt, maxRetries)
 
 				if errors.Is(err, context.Canceled) {
 					return context.Canceled
@@ -571,7 +584,6 @@ playlists:
 				if p.GetState() == StatePlaying {
 					log.Info().Msg("Stream was playing, entering reconnect mode")
 					reconnectStreamURLs = streamURLs
-					reconnectStreamInfo = streamInfo
 					break playlists
 				}
 
@@ -588,7 +600,7 @@ playlists:
 
 	var finalErr error
 	if len(reconnectStreamURLs) > 0 {
-		err := p.reconnectWithRotation(s, reconnectStreamURLs, reconnectStreamInfo, maxRetries)
+		err := p.reconnectWithRotation(s, reconnectStreamURLs, maxRetries)
 		if err == nil {
 			return nil
 		}
@@ -606,7 +618,7 @@ playlists:
 }
 
 // If a stream recovers then drops again, the retry counter resets.
-func (p *Player) reconnectWithRotation(s *station.Station, streamURLs []string, streamInfo StreamInfo, maxRetries int) error {
+func (p *Player) reconnectWithRotation(s *station.Station, streamURLs []string, maxRetries int) error {
 	var lastErr error
 
 	for retryCount := 1; retryCount <= maxRetries; retryCount++ {
@@ -625,8 +637,6 @@ func (p *Player) reconnectWithRotation(s *station.Station, streamURLs []string, 
 		}
 		p.cancelFunc = cancel
 		p.mu.Unlock()
-
-		p.setStreamInfo(streamInfo)
 
 		err := p.playStreamURL(ctx, s, streamURL)
 		if err == nil {
@@ -672,6 +682,7 @@ func isNonRetryableError(err error) bool {
 
 func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamURL string) error {
 	speaker.Clear()
+	streamInfo := parseStreamInfoFromURL(streamURL)
 
 	log.Debug().Msgf("Connecting to stream: %s", streamURL)
 
@@ -695,6 +706,8 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 		return &httpStatusError{StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 
+	p.setStreamInfo(streamInfo)
+
 	var icyMetaint int
 	if val := resp.Header.Get("icy-metaint"); val != "" {
 		_, _ = fmt.Sscanf(val, "%d", &icyMetaint)
@@ -710,6 +723,8 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 	p.streamErr = make(chan error, 1)
 	p.pausedAt = time.Time{}
 	p.totalPausedMs = 0
+	p.currentStation = s
+	p.streamAlive = true
 	p.mu.Unlock()
 
 	timeoutBody := &contextReader{
@@ -721,79 +736,33 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 	p.wg.Add(1)
 	go p.readNetworkStream(ctx, resp.Body, timeoutBody, pipeWriter, icyMetaint)
 
-	log.Debug().Msg("Decoding MP3 stream...")
-	streamer, format, err := mp3.Decode(pipeReader)
-	if err != nil {
-		pipeReader.Close()
-		pipeWriter.Close()
-		resp.Body.Close()
-		return fmt.Errorf("failed to decode MP3 stream: %w", err)
+	if strings.EqualFold(streamInfo.Format, "AAC") {
+		log.Debug().Msg("Decoding AAC stream...")
+		p.wg.Add(1)
+		go p.decodeAACStream(ctx, pipeReader)
+	} else {
+		log.Debug().Msg("Decoding MP3 stream...")
+		streamer, format, err := mp3.Decode(pipeReader)
+		if err != nil {
+			pipeReader.Close()
+			pipeWriter.Close()
+			resp.Body.Close()
+			return fmt.Errorf("failed to decode MP3 stream: %w", err)
+		}
+
+		if err := p.configurePlaybackOutput(format.SampleRate); err != nil {
+			streamer.Close()
+			pipeReader.Close()
+			pipeWriter.Close()
+			resp.Body.Close()
+			return fmt.Errorf("failed to initialize audio output: %w", err)
+		}
+
+		p.wg.Add(1)
+		go p.decodeAndBuffer(ctx, streamer, pipeReader)
+
+		log.Debug().Msgf("Now playing: %s", s.Title)
 	}
-
-	log.Debug().Msgf("Initializing audio output (sample rate: %d Hz)...", format.SampleRate)
-	if err := p.initSpeaker(format.SampleRate); err != nil {
-		streamer.Close()
-		pipeReader.Close()
-		pipeWriter.Close()
-		resp.Body.Close()
-		return fmt.Errorf("failed to initialize audio output: %w", err)
-	}
-
-	p.mu.Lock()
-	p.format = format
-	p.mu.Unlock()
-
-	p.streamAliveMu.Lock()
-	p.streamAlive = true
-	p.streamAliveMu.Unlock()
-
-	p.mu.Lock()
-	p.currentStation = s
-	p.mu.Unlock()
-
-	p.wg.Add(1)
-	go p.decodeAndBuffer(ctx, streamer, pipeReader)
-
-	p.mu.Lock()
-	volumePercent := p.volumePercent
-	if volumePercent < 0 {
-		volumePercent = config.DefaultVolume
-	}
-	volumeLevel := percentToExponent(float64(volumePercent))
-
-	fadeInSamples := int(format.SampleRate.N(fadeInDuration))
-	bufferedStreamer := &bufferedStreamerWrapper{
-		player:          p,
-		fadeInRemaining: fadeInSamples,
-		fadeInTotal:     fadeInSamples,
-	}
-
-	p.volume = &effects.Volume{
-		Streamer: bufferedStreamer,
-		Base:     2,
-		Volume:   volumeLevel,
-		Silent:   volumePercent == 0,
-	}
-
-	p.ctrl = &beep.Ctrl{
-		Streamer: p.volume,
-		Paused:   false,
-	}
-	p.isPlaying = true
-	p.isPaused = false
-	p.mu.Unlock()
-
-	speaker.Play(p.ctrl)
-
-	p.setState(StatePlaying)
-	p.startSession()
-
-	p.stateMu.Lock()
-	p.streamInfo.SampleRate = int(format.SampleRate)
-	p.stateMu.Unlock()
-
-	p.setLastError("")
-	log.Debug().Msgf("Now playing: %s", s.Title)
 
 	stopPlayback := func() {
 		p.closeStreamDone()
@@ -816,6 +785,235 @@ func (p *Player) playStreamURL(ctx context.Context, s *station.Station, streamUR
 		stopPlayback()
 		return fmt.Errorf("stream ended unexpectedly")
 	}
+}
+
+func (p *Player) configurePlaybackOutput(sourceSampleRate beep.SampleRate) error {
+	if err := p.initSpeaker(DefaultSampleRate); err != nil {
+		return err
+	}
+
+	targetSampleRate := DefaultSampleRate
+
+	p.mu.Lock()
+	volumePercent := p.volumePercent
+	if volumePercent < 0 {
+		volumePercent = config.DefaultVolume
+	}
+	volumeLevel := percentToExponent(float64(volumePercent))
+	fadeInSamples := int(targetSampleRate.N(fadeInDuration))
+	bufferedStreamer := &bufferedStreamerWrapper{
+		player:          p,
+		fadeInRemaining: fadeInSamples,
+		fadeInTotal:     fadeInSamples,
+	}
+	playbackStreamer := beep.Streamer(bufferedStreamer)
+	if sourceSampleRate != targetSampleRate {
+		playbackStreamer = beep.Resample(3, sourceSampleRate, targetSampleRate, playbackStreamer)
+	}
+
+	p.volume = &effects.Volume{
+		Streamer: playbackStreamer,
+		Base:     2,
+		Volume:   volumeLevel,
+		Silent:   volumePercent == 0,
+	}
+	p.ctrl = &beep.Ctrl{
+		Streamer: p.volume,
+		Paused:   false,
+	}
+	p.format = beep.Format{
+		SampleRate:  targetSampleRate,
+		NumChannels: 2,
+		Precision:   2,
+	}
+	p.isPlaying = true
+	p.isPaused = false
+	p.mu.Unlock()
+
+	speaker.Play(p.ctrl)
+
+	p.setState(StatePlaying)
+	p.startSession()
+
+	p.stateMu.Lock()
+	p.streamInfo.SampleRate = int(sourceSampleRate)
+	p.stateMu.Unlock()
+
+	p.setLastError("")
+	return nil
+}
+
+func (p *Player) decodeAACStream(ctx context.Context, pipeReader *io.PipeReader) {
+	defer func() {
+		pipeReader.Close()
+		close(p.sampleCh)
+		p.wg.Done()
+
+		p.streamAliveMu.Lock()
+		p.streamAlive = false
+		p.streamAliveMu.Unlock()
+
+		log.Debug().Msg("AAC decoder stopped")
+
+		if ctx.Err() == nil {
+			p.closeStreamDone()
+		}
+	}()
+
+	reportError := func(err error) {
+		p.closeStreamDone()
+		select {
+		case p.streamErr <- err:
+		default:
+		}
+	}
+
+	reader := bufio.NewReader(pipeReader)
+	dec := aacdecoder.New()
+
+	firstFrame, header, err := readAACFrame(reader)
+	if err != nil {
+		if ctx.Err() == nil {
+			log.Error().Err(err).Msg("Failed to read AAC frame")
+			reportError(fmt.Errorf("aac frame read error: %w", err))
+		}
+		return
+	}
+
+	sampleRate := 0
+	if header.SamplingIndex >= 0 && header.SamplingIndex < len(aactables.SampleRates) {
+		sampleRate = int(aactables.SampleRates[header.SamplingIndex])
+	}
+	if sampleRate <= 0 {
+		reportError(fmt.Errorf("invalid AAC sample rate index %d", header.SamplingIndex))
+		return
+	}
+
+	log.Debug().Int("aac_profile", header.Profile).
+		Int("aac_sample_index", header.SamplingIndex).
+		Int("aac_channel_config", header.ChannelConfig).
+		Int("aac_frame_length", header.FrameLength).
+		Bool("aac_crc_present", !header.ProtectionAbsent).
+		Msg("Parsed first AAC ADTS frame")
+
+	decodedSamples, err := dec.DecodeFrame(firstFrame)
+	if err != nil {
+		reportError(fmt.Errorf("failed to decode AAC frame: %w", err))
+		return
+	}
+
+	if err := p.configurePlaybackOutput(beep.SampleRate(sampleRate)); err != nil {
+		reportError(fmt.Errorf("failed to initialize audio output: %w", err))
+		return
+	}
+
+	if err := p.enqueueAACSamples(decodedSamples, header); err != nil {
+		reportError(err)
+		return
+	}
+
+	log.Debug().Msgf("Now playing AAC stream")
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Debug().Msg("AAC decoder exiting: context canceled")
+			return
+		case <-p.streamDone:
+			log.Debug().Msg("AAC decoder exiting: stream done")
+			return
+		default:
+		}
+
+		frame, frameHeader, err := readAACFrame(reader)
+		if err != nil {
+			if ctx.Err() != nil || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				log.Debug().Err(err).Msg("AAC decoder exiting")
+				return
+			}
+			log.Error().Err(err).Msg("Error reading AAC frame")
+			reportError(fmt.Errorf("aac frame read error: %w", err))
+			return
+		}
+
+		samples, err := dec.DecodeFrame(frame)
+		if err != nil {
+			log.Error().Err(err).Msg("Error decoding AAC frame")
+			reportError(fmt.Errorf("aac decode error: %w", err))
+			return
+		}
+
+		if err := p.enqueueAACSamples(samples, frameHeader); err != nil {
+			reportError(err)
+			return
+		}
+	}
+}
+
+func readAACFrame(reader *bufio.Reader) ([]byte, aacadts.Header, error) {
+	headerBuf := make([]byte, 7)
+	if _, err := io.ReadFull(reader, headerBuf); err != nil {
+		return nil, aacadts.Header{}, err
+	}
+
+	protectionAbsent := headerBuf[1]&0x01 != 0
+	if !protectionAbsent {
+		crc := make([]byte, 2)
+		if _, err := io.ReadFull(reader, crc); err != nil {
+			return nil, aacadts.Header{}, err
+		}
+		headerBuf = append(headerBuf, crc...)
+	}
+
+	header, err := aacadts.ReadHeaderFromBytes(headerBuf)
+	if err != nil {
+		return nil, aacadts.Header{}, err
+	}
+	if header.FrameLength < len(headerBuf) {
+		return nil, aacadts.Header{}, fmt.Errorf("invalid AAC frame length %d", header.FrameLength)
+	}
+
+	frame := make([]byte, header.FrameLength)
+	copy(frame, headerBuf)
+	if len(frame) > len(headerBuf) {
+		if _, err := io.ReadFull(reader, frame[len(headerBuf):]); err != nil {
+			return nil, aacadts.Header{}, err
+		}
+	}
+
+	return frame, header, nil
+}
+
+func (p *Player) enqueueAACSamples(samples []float32, header aacadts.Header) error {
+	channels := header.ChannelConfig
+	if channels <= 0 {
+		channels = 2
+	}
+	if channels > 2 {
+		channels = 2
+	}
+
+	if len(samples)%channels != 0 {
+		return fmt.Errorf("invalid AAC sample count %d for %d channels", len(samples), channels)
+	}
+
+	frameCount := len(samples) / channels
+	for i := 0; i < frameCount; i++ {
+		base := i * channels
+		left := float64(samples[base])
+		right := left
+		if channels > 1 {
+			right = float64(samples[base+1])
+		}
+
+		select {
+		case <-p.streamDone:
+			return nil
+		case p.sampleCh <- [2]float64{left, right}:
+		}
+	}
+
+	return nil
 }
 
 func (p *Player) readNetworkStream(ctx context.Context, respBody io.ReadCloser, bodyReader io.Reader, pipeWriter *io.PipeWriter, icyMetaint int) {

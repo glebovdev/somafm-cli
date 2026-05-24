@@ -17,6 +17,7 @@ A terminal-based music player for [SomaFM](https://somafm.com/) radio stations b
 - Stations sorted by listener count
 - Favorites management
 - Persistent configuration (volume, favorites, last station)
+- User-selectable preferred stream format (MP3 or AAC)
 - Customizable color themes
 - Automatic retry on stream failure
 
@@ -71,6 +72,7 @@ somafm --help       # Show help and config file path
 | `←` `→` or `+` `-` | Volume up / down     |
 | `Scroll`           | Volume (on volume bar) |
 | `m`                | Mute / Unmute        |
+| `s`                | Toggle preferred stream format |
 | `f`                | Toggle favorite      |
 | `?`                | Show help            |
 | `a`                | About                |
@@ -84,6 +86,7 @@ Configuration is saved automatically to `~/.config/somafm/config.yml`.
 volume: 70                    # Volume level (0-100)
 last_station: groovesalad     # Last played station ID
 autostart: false              # Auto-play last station on launch (true/false)
+preferred_format: mp3         # Preferred stream format: mp3 or aac
 favorites:                    # List of favorite station IDs
   - groovesalad
   - dronezone
@@ -94,7 +97,7 @@ theme:                        # Color customization
   highlight: "#ff9d65"
 ```
 
-Settings are saved when you adjust volume, select a station, or toggle favorites.
+Settings are saved when you adjust volume, select a station, toggle favorites, or switch the preferred stream format.
 
 ### Theme Options
 

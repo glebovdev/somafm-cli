@@ -1,6 +1,6 @@
 module github.com/glebovdev/somafm-cli
 
-go 1.25.0
+go 1.25.6
 
 require (
 	github.com/gdamore/tcell/v2 v2.13.8
@@ -8,6 +8,7 @@ require (
 	github.com/gopxl/beep/v2 v2.1.1
 	github.com/rivo/tview v0.42.0
 	github.com/rs/zerolog v1.34.0
+	github.com/skrashevich/go-aac v0.1.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

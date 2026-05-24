@@ -20,6 +20,10 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Autostart != false {
 		t.Errorf("DefaultConfig().Autostart = %v, want false", cfg.Autostart)
 	}
+
+	if cfg.PreferredFormat != AudioFormatMP3 {
+		t.Errorf("DefaultConfig().PreferredFormat = %q, want %q", cfg.PreferredFormat, AudioFormatMP3)
+	}
 }
 
 func TestConfigSaveAndLoad(t *testing.T) {
@@ -27,8 +31,9 @@ func TestConfigSaveAndLoad(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 
 	testCfg := &Config{
-		Volume:      85,
-		LastStation: "groovesalad",
+		Volume:          85,
+		LastStation:     "groovesalad",
+		PreferredFormat: AudioFormatAAC,
 	}
 
 	err := testCfg.Save()
@@ -52,6 +57,10 @@ func TestConfigSaveAndLoad(t *testing.T) {
 
 	if loadedCfg.LastStation != testCfg.LastStation {
 		t.Errorf("Load().LastStation = %q, want %q", loadedCfg.LastStation, testCfg.LastStation)
+	}
+
+	if loadedCfg.PreferredFormat != testCfg.PreferredFormat {
+		t.Errorf("Load().PreferredFormat = %q, want %q", loadedCfg.PreferredFormat, testCfg.PreferredFormat)
 	}
 }
 
@@ -93,8 +102,9 @@ func TestVolumeValidation(t *testing.T) {
 			t.Setenv("HOME", tmpDir)
 
 			testCfg := &Config{
-				Volume:      tt.inputVolume,
-				LastStation: "groovesalad",
+				Volume:          tt.inputVolume,
+				LastStation:     "groovesalad",
+				PreferredFormat: AudioFormatAAC,
 			}
 
 			err := testCfg.Save()
@@ -145,8 +155,9 @@ func TestThemePersistence(t *testing.T) {
 	t.Setenv("HOME", tmpDir)
 
 	testCfg := &Config{
-		Volume:      70,
-		LastStation: "groovesalad",
+		Volume:          70,
+		LastStation:     "groovesalad",
+		PreferredFormat: AudioFormatAAC,
 		Theme: Theme{
 			Background: "black",
 			Foreground: "yellow",
@@ -176,6 +187,9 @@ func TestThemePersistence(t *testing.T) {
 	}
 	if loadedCfg.Theme.Highlight != "red" {
 		t.Errorf("Theme.Highlight = %q, want %q", loadedCfg.Theme.Highlight, "red")
+	}
+	if loadedCfg.PreferredFormat != AudioFormatAAC {
+		t.Errorf("PreferredFormat = %q, want %q", loadedCfg.PreferredFormat, AudioFormatAAC)
 	}
 }
 

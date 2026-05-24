@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/glebovdev/somafm-cli/internal/config"
 )
 
 func TestPercentToExponent(t *testing.T) {
@@ -79,6 +81,24 @@ func TestNewPlayer(t *testing.T) {
 
 	if p.isPaused {
 		t.Error("New player should not be paused")
+	}
+
+	if p.GetPreferredFormat() != config.AudioFormatMP3 {
+		t.Errorf("New player preferred format = %q, want %q", p.GetPreferredFormat(), config.AudioFormatMP3)
+	}
+}
+
+func TestPlayerPreferredFormat(t *testing.T) {
+	p := NewPlayer()
+
+	p.SetPreferredFormat("aac")
+	if got := p.GetPreferredFormat(); got != config.AudioFormatAAC {
+		t.Errorf("GetPreferredFormat() = %q, want %q", got, config.AudioFormatAAC)
+	}
+
+	p.SetPreferredFormat("something-else")
+	if got := p.GetPreferredFormat(); got != config.AudioFormatMP3 {
+		t.Errorf("GetPreferredFormat() fallback = %q, want %q", got, config.AudioFormatMP3)
 	}
 }
 
