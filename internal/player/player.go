@@ -19,10 +19,10 @@ import (
 	"github.com/gopxl/beep/v2/effects"
 	"github.com/gopxl/beep/v2/mp3"
 	"github.com/gopxl/beep/v2/speaker"
+	"github.com/rs/zerolog/log"
 	aacadts "github.com/skrashevich/go-aac/pkg/adts"
 	aacdecoder "github.com/skrashevich/go-aac/pkg/decoder"
 	aactables "github.com/skrashevich/go-aac/pkg/tables"
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -120,16 +120,16 @@ func (cr *contextReader) Read(p []byte) (n int, err error) {
 
 // Player manages audio streaming and playback for SomaFM radio stations.
 type Player struct {
-	format        beep.Format
-	volume        *effects.Volume
-	ctrl          *beep.Ctrl
-	mu            sync.Mutex
-	cancelFunc    context.CancelFunc
-	isPaused      bool
-	isPlaying     bool
-	speakerInit   bool
-	volumePercent int
-	httpClient    *http.Client
+	format          beep.Format
+	volume          *effects.Volume
+	ctrl            *beep.Ctrl
+	mu              sync.Mutex
+	cancelFunc      context.CancelFunc
+	isPaused        bool
+	isPlaying       bool
+	speakerInit     bool
+	volumePercent   int
+	httpClient      *http.Client
 	preferredFormat string
 
 	sampleCh       chan [2]float64
@@ -188,13 +188,13 @@ func NewPlayer() *Player {
 			NumChannels: 2,
 			Precision:   2,
 		},
-		speakerInit:   false,
-		isPaused:      false,
-		isPlaying:     false,
-		volumePercent: -1,
-		httpClient:    httpClient,
+		speakerInit:     false,
+		isPaused:        false,
+		isPlaying:       false,
+		volumePercent:   -1,
+		httpClient:      httpClient,
 		preferredFormat: config.AudioFormatMP3,
-		currentTrack:  "",
+		currentTrack:    "",
 	}
 }
 

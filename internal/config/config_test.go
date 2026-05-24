@@ -102,8 +102,8 @@ func TestVolumeValidation(t *testing.T) {
 			t.Setenv("HOME", tmpDir)
 
 			testCfg := &Config{
-				Volume:      tt.inputVolume,
-				LastStation: "groovesalad",
+				Volume:          tt.inputVolume,
+				LastStation:     "groovesalad",
 				PreferredFormat: AudioFormatAAC,
 			}
 
