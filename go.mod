@@ -8,6 +8,7 @@ require (
 	github.com/gopxl/beep/v2 v2.1.1
 	github.com/rivo/tview v0.42.0
 	github.com/rs/zerolog v1.34.0
+	github.com/skrashevich/go-aac v0.1.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -21,7 +22,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/skrashevich/go-aac v0.1.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/term v0.40.0 // indirect
