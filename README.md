@@ -25,6 +25,7 @@ A terminal-based music player for [SomaFM](https://somafm.com/) radio stations b
 ### Homebrew (macOS/Linux)
 
 ```bash
+brew trust glebovdev/tap   # Homebrew 7+ requires this once for third-party taps
 brew install glebovdev/tap/somafm
 ```
 
