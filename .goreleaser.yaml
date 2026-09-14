@@ -113,7 +113,6 @@ release:
     go install github.com/glebovdev/somafm-cli/cmd/somafm@latest
     ```
 
-# Homebrew cask configuration (replaces deprecated brews)
 scoops:
   - name: somafm
     repository:
@@ -132,8 +131,6 @@ homebrew_casks:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Casks
-    url:
-      verified: github.com/glebovdev/somafm-cli
     homepage: "https://github.com/glebovdev/somafm-cli"
     description: "Terminal-based music player for SomaFM radio stations"
     license: "MIT"
@@ -142,9 +139,10 @@ homebrew_casks:
       email: bot@goreleaser.com
     binaries:
       - somafm
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/somafm"]
-          end
+    # custom_block until goreleaser ships hooks.post.install_steps (goreleaser/goreleaser#6873, v2.19)
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/somafm"]
+        end
+      end

@@ -1,6 +1,8 @@
 module github.com/glebovdev/somafm-cli
 
-go 1.25.0
+go 1.27.0
+
+toolchain go1.27.1
 
 require (
 	github.com/gdamore/tcell/v2 v2.13.8
