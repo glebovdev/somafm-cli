@@ -97,6 +97,7 @@ release:
 
     ### macOS
     ```bash
+    brew trust glebovdev/tap   # Homebrew 7+ requires this once for third-party taps
     brew install glebovdev/tap/somafm
     ```
 
