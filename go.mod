@@ -5,11 +5,11 @@ go 1.27.0
 toolchain go1.27.3
 
 require (
-	github.com/gdamore/tcell/v2 v2.13.8
-	github.com/go-resty/resty/v2 v2.17.1
+	github.com/gdamore/tcell/v2 v2.13.10
+	github.com/go-resty/resty/v2 v2.17.2
 	github.com/gopxl/beep/v2 v2.1.1
 	github.com/rivo/tview v0.42.0
-	github.com/rs/zerolog v1.34.0
+	github.com/rs/zerolog v1.35.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
